@@ -1,0 +1,1415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive mental model of the tiny-gpu architecture, kernel launch flow, core pipeline, and thread execution.">
+  <title>tiny-gpu — Mental Model Explorer</title>
+  <style>
+    :root {
+      --bg: #f5f2ea;
+      --paper: #fffdf8;
+      --paper-2: #fbf8f0;
+      --ink: #17212b;
+      --muted: #66717d;
+      --line: #d8d1c3;
+      --line-strong: #b9b0a0;
+      --control: #c56a13;
+      --control-soft: #fff0db;
+      --compute: #087f73;
+      --compute-soft: #dcf5ef;
+      --memory: #315fc4;
+      --memory-soft: #e8efff;
+      --thread: #7851a9;
+      --thread-soft: #f0e8ff;
+      --storage: #b53d48;
+      --storage-soft: #ffe9eb;
+      --shared: #556577;
+      --shared-soft: #e9eef3;
+      --highlight: #f1b72f;
+      --shadow: 0 10px 30px rgba(44, 37, 25, .08);
+      --radius: 18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(197, 106, 19, .09), transparent 30rem),
+        radial-gradient(circle at 92% 18%, rgba(49, 95, 196, .08), transparent 31rem),
+        var(--bg);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+
+    a { color: var(--memory); }
+    button { font: inherit; }
+    code, kbd, .mono { font-family: var(--mono); }
+
+    .page {
+      width: min(1280px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 80px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(28px, 5vw, 58px);
+      border: 1px solid #242e37;
+      border-radius: 26px;
+      color: #f9f6ef;
+      background:
+        linear-gradient(115deg, rgba(255,255,255,.06), transparent 40%),
+        #17212b;
+      box-shadow: 0 24px 60px rgba(23, 33, 43, .2);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 50%;
+      right: -170px;
+      top: -200px;
+      box-shadow: 0 0 0 42px rgba(255,255,255,.03), 0 0 0 92px rgba(255,255,255,.02);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 999px;
+      color: #f4c66b;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 920px;
+      margin: 22px 0 12px;
+      font-size: clamp(36px, 6vw, 68px);
+      line-height: 1.02;
+      letter-spacing: -.045em;
+    }
+
+    .hero p {
+      max-width: 840px;
+      margin: 0;
+      color: #d8dee5;
+      font-size: clamp(16px, 2.1vw, 20px);
+    }
+
+    .hero-answer {
+      max-width: 950px;
+      margin-top: 26px;
+      padding: 18px 20px;
+      border-left: 3px solid var(--highlight);
+      background: rgba(255,255,255,.055);
+      border-radius: 0 12px 12px 0;
+      color: #fff7e8;
+      font-size: 16px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .metric {
+      padding: 13px 14px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 12px;
+      background: rgba(255,255,255,.04);
+    }
+    .metric strong { display: block; font-size: 20px; color: #fff; }
+    .metric span { display: block; color: #aeb8c3; font-size: 12px; }
+
+    .toc {
+      position: sticky;
+      top: 10px;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 18px 0 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 253, 248, .9);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+      scrollbar-width: thin;
+    }
+
+    .toc a {
+      flex: 0 0 auto;
+      padding: 7px 11px;
+      border-radius: 9px;
+      color: var(--ink);
+      font-size: 13px;
+      text-decoration: none;
+    }
+    .toc a:hover, .toc a:focus-visible { background: var(--shared-soft); outline: none; }
+
+    section { margin-top: 64px; scroll-margin-top: 76px; }
+    .section-head { max-width: 850px; margin-bottom: 22px; }
+    .kicker {
+      color: var(--control);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 7px 0 8px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.08;
+      letter-spacing: -.035em;
+    }
+    .section-head p { margin: 0; color: var(--muted); font-size: 17px; }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .explorer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .diagram-card { padding: 14px; overflow: hidden; }
+    .diagram-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 2px 4px 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .swatch { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+    .pan-hint { display: none; color: var(--control); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+
+    .gpu-svg { display: block; width: 100%; height: auto; min-height: 430px; }
+    .node { cursor: pointer; outline: none; }
+    .node rect {
+      stroke-width: 1.6;
+      transition: filter .16s ease, stroke-width .16s ease, opacity .16s ease;
+    }
+    .node:hover rect, .node:focus-visible rect, .node.selected rect {
+      stroke-width: 3;
+      filter: drop-shadow(0 4px 7px rgba(23,33,43,.16));
+    }
+    .node.flow rect {
+      stroke: var(--highlight);
+      stroke-width: 4;
+      filter: drop-shadow(0 0 10px rgba(241,183,47,.55));
+    }
+    .node text { pointer-events: none; }
+    .node .title { font-family: var(--sans); font-size: 16px; font-weight: 760; fill: var(--ink); }
+    .node .sub { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+    .node .tag { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .control rect { fill: var(--control-soft); stroke: var(--control); }
+    .control .tag { fill: var(--control); }
+    .compute rect { fill: var(--compute-soft); stroke: var(--compute); }
+    .compute .tag { fill: var(--compute); }
+    .memory rect { fill: var(--memory-soft); stroke: var(--memory); }
+    .memory .tag { fill: var(--memory); }
+    .storage rect { fill: var(--storage-soft); stroke: var(--storage); }
+    .storage .tag { fill: var(--storage); }
+    .shared rect { fill: var(--shared-soft); stroke: var(--shared); }
+    .shared .tag { fill: var(--shared); }
+    .dashed rect { stroke-dasharray: 6 5; opacity: .72; }
+    .boundary { fill: rgba(255,253,248,.55); stroke: var(--line-strong); stroke-width: 1.4; }
+    .boundary-label { font-family: var(--mono); font-size: 11px; font-weight: 800; letter-spacing: .12em; fill: var(--muted); }
+    .arrow { fill: none; stroke: #87929d; stroke-width: 1.7; }
+    .arrow.strong { stroke: var(--shared); stroke-width: 2.1; }
+    .arrow.dashed { stroke-dasharray: 5 5; }
+    .bus-label { font-family: var(--mono); font-size: 10px; fill: #73808c; }
+
+    .inspector {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, #fffdf8, #f8f4eb);
+      box-shadow: var(--shadow);
+    }
+    .inspector .eyebrow { color: var(--control); border-color: #e6cda8; background: #fff8ed; }
+    .inspector h3 { margin: 16px 0 8px; font-size: 25px; line-height: 1.12; letter-spacing: -.025em; }
+    .inspector .summary { margin: 0; color: #44515d; }
+    .detail-list { display: grid; gap: 9px; margin: 18px 0 0; padding: 0; list-style: none; }
+    .detail-list li { padding-top: 9px; border-top: 1px solid var(--line); color: #4c5864; font-size: 14px; }
+    .detail-list b { color: var(--ink); }
+    .remember {
+      margin-top: auto;
+      padding: 14px;
+      border-radius: 12px;
+      background: #17212b;
+      color: #f7f1e5;
+      font-size: 13px;
+    }
+    .remember b { color: var(--highlight); }
+    .source { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+    .launch-panel { margin-top: 18px; padding: 18px; }
+    .launch-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .launch-top h3 { margin: 0; font-size: 19px; }
+    .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 8px 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      color: var(--ink);
+      background: var(--paper);
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, transform .15s ease;
+    }
+    .btn:hover { background: #f4eee3; border-color: #928674; }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { color: #fff; border-color: #17212b; background: #17212b; }
+    .btn.primary:hover { background: #28343f; }
+    .btn:focus-visible { outline: 3px solid rgba(49,95,196,.28); outline-offset: 2px; }
+
+    .launch-track { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 16px; }
+    .launch-step {
+      position: relative;
+      min-height: 74px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      color: var(--muted);
+      background: var(--paper-2);
+      text-align: left;
+      cursor: pointer;
+    }
+    .launch-step .num { display: block; font-family: var(--mono); font-size: 10px; color: #9a8d7b; }
+    .launch-step strong { display: block; margin-top: 4px; color: var(--ink); font-size: 13px; line-height: 1.25; }
+    .launch-step.active { border-color: var(--control); background: var(--control-soft); box-shadow: inset 0 0 0 1px var(--control); }
+    .launch-step.done { border-color: #d4bd98; background: #fff9ee; }
+    .launch-note {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 14px;
+      align-items: start;
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #17212b;
+      color: #e8edf2;
+    }
+    .launch-note .badge { color: var(--highlight); font-family: var(--mono); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .launch-note p { margin: 0; }
+
+    .core-explorer { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; }
+    .core-canvas { padding: 22px; }
+    .shared-stack { display: grid; gap: 8px; width: min(620px, 100%); margin: 0 auto; }
+    .component-button {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      color: var(--ink);
+      background: var(--paper);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .component-button:hover, .component-button:focus-visible, .component-button.selected {
+      border-color: var(--shared);
+      box-shadow: 0 6px 18px rgba(23,33,43,.09);
+      outline: none;
+    }
+    .component-button.stage-active { border-color: var(--highlight); box-shadow: 0 0 0 3px rgba(241,183,47,.3); }
+    .component-button .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .component-button strong { font-size: 15px; }
+    .component-button small { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .component-button span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .down-arrow { display: grid; place-items: center; height: 23px; color: #9d927f; font-size: 20px; line-height: 1; }
+    .broadcast {
+      margin: 14px auto 12px;
+      padding: 9px 13px;
+      border: 1px dashed #93856f;
+      border-radius: 999px;
+      color: #675b4c;
+      background: #fff8e9;
+      font-family: var(--mono);
+      font-size: 11px;
+      text-align: center;
+    }
+    .lane-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .lane {
+      padding: 12px;
+      border: 1px solid #c9bce0;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbf8ff, #f3edfb);
+    }
+    .lane-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+    .lane-head strong { font-size: 14px; color: #563b7c; }
+    .lane-head code { font-size: 10px; color: #7d659b; }
+    .unit {
+      width: 100%;
+      margin-top: 6px;
+      padding: 8px;
+      border: 1px solid #d6cae7;
+      border-radius: 9px;
+      color: #44335d;
+      background: rgba(255,255,255,.72);
+      text-align: left;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .unit:hover, .unit:focus-visible, .unit.selected { border-color: var(--thread); box-shadow: 0 0 0 2px rgba(120,81,169,.13); outline: none; }
+    .unit b { display: block; color: #44335d; font-size: 12px; }
+    .unit span { display: block; margin-top: 1px; color: #76648c; font-family: var(--mono); font-size: 9px; }
+    .lane-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .lane-footer { margin-top: 8px; padding-top: 7px; border-top: 1px solid #d9cfE8; color: #76648c; font-family: var(--mono); font-size: 9px; }
+    .busbar { margin-top: 12px; padding: 9px; border-top: 1px dashed #aa9b87; color: #756959; font-family: var(--mono); font-size: 10px; text-align: center; }
+
+    .split-label { display: flex; justify-content: space-between; gap: 14px; margin: 24px 0 8px; color: var(--muted); font-size: 12px; }
+    .split-label b { color: var(--ink); }
+
+    .lifecycle { padding: 22px; }
+    .lifecycle-top { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .mode-switch { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper-2); }
+    .mode-switch button { padding: 7px 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+    .mode-switch button.active { color: #fff; background: #17212b; }
+    .stage-rail { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-top: 20px; }
+    .stage {
+      position: relative;
+      min-height: 76px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--paper-2);
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+    }
+    .stage::after {
+      content: "→";
+      position: absolute;
+      right: -8px;
+      top: 30px;
+      z-index: 2;
+      color: #a79b89;
+      font-size: 12px;
+    }
+    .stage:last-child::after { display: none; }
+    .stage .state { display: block; color: #998c7a; font-family: var(--mono); font-size: 9px; }
+    .stage strong { display: block; margin-top: 5px; font-size: 13px; color: var(--ink); }
+    .stage small { display: block; margin-top: 3px; font-size: 10px; line-height: 1.3; }
+    .stage.done { border-color: #c9baa3; background: #fff8ea; }
+    .stage.active { color: var(--ink); border-color: var(--compute); background: var(--compute-soft); box-shadow: inset 0 0 0 1px var(--compute); }
+    .stage.active .state { color: var(--compute); }
+    .stage-detail {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .stage-copy { padding: 20px; border-radius: 14px; background: #17212b; color: #dce3e9; }
+    .stage-copy h3 { margin: 0 0 8px; color: #fff; font-size: 23px; }
+    .stage-copy p { margin: 0; }
+    .stage-copy .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+    .chip { padding: 4px 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; color: #f0d396; font-family: var(--mono); font-size: 10px; }
+    .stage-aside { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); }
+    .stage-aside h4 { margin: 0 0 9px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .stage-aside ul { margin: 0; padding-left: 18px; color: #4b5864; font-size: 13px; }
+    .stage-aside li + li { margin-top: 6px; }
+    .controls-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+
+    .threads-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .threads-copy { padding: 24px; }
+    .threads-copy h3 { margin-top: 0; }
+    .threads-copy p { color: #4f5b66; }
+    .rule-list { display: grid; gap: 10px; margin-top: 18px; }
+    .rule {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--paper-2);
+    }
+    .rule b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #fff; background: var(--thread); font-family: var(--mono); font-size: 11px; }
+    .rule p { margin: 1px 0 0; color: #4f5b66; font-size: 13px; }
+    .lane-table-wrap { padding: 18px; overflow: auto; }
+    .lane-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .lane-table th, .lane-table td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    .lane-table th { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+    .lane-table td:first-child { color: var(--thread); font-weight: 700; }
+    .lane-table tr:last-child td { border-bottom: 0; }
+    .table-note { margin: 10px 3px 0; color: var(--muted); font-size: 12px; }
+
+    .memory-path { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr; gap: 18px; align-items: center; padding: 24px; }
+    .memory-column { display: grid; gap: 8px; }
+    .memory-box { padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper-2); text-align: center; }
+    .memory-box strong { display: block; font-size: 13px; }
+    .memory-box span { display: block; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+    .memory-box.data { border-color: #b9c7e9; background: var(--memory-soft); }
+    .memory-box.control { border-color: #e7c28f; background: var(--control-soft); }
+    .memory-box.storage { border-color: #e4abb1; background: var(--storage-soft); }
+    .memory-arrow { display: grid; place-items: center; align-content: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; text-align: center; }
+    .memory-arrow .big { font-size: 28px; line-height: 1; color: #9a8a72; }
+    .handshake { display: flex; justify-content: center; gap: 7px; flex-wrap: wrap; margin-top: 14px; }
+    .handshake code { padding: 4px 8px; border-radius: 6px; background: #17212b; color: #f0d396; font-size: 10px; }
+    .memory-notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+    .note { padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+    .note strong { display: block; margin-bottom: 4px; }
+    .note p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .isa-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: 18px; }
+    .isa-table-wrap { padding: 18px; overflow: auto; }
+    .isa-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .isa-table th, .isa-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .isa-table th { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+    .isa-table td:first-child { font-family: var(--mono); font-weight: 750; color: var(--compute); }
+    .isa-table td:nth-child(2) { font-family: var(--mono); color: var(--muted); }
+    .isa-table tr:last-child td { border-bottom: 0; }
+    .format-card { padding: 22px; }
+    .format-card h3 { margin-top: 0; }
+    .bit-word { display: grid; grid-template-columns: 4fr 4fr 4fr 4fr; margin-top: 14px; border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
+    .bit-word div { padding: 9px 5px; border-right: 1px solid var(--line-strong); text-align: center; font-family: var(--mono); font-size: 10px; }
+    .bit-word div:last-child { border-right: 0; }
+    .bit-word strong { display: block; font-size: 12px; }
+    .register-list { display: grid; gap: 7px; margin-top: 16px; }
+    .reg-row { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--paper-2); font-size: 12px; }
+    .reg-row code { color: var(--thread); font-weight: 700; }
+
+    .recap-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .recap-card { min-height: 180px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow); }
+    .recap-card .n { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: #17212b; color: var(--highlight); font-family: var(--mono); font-weight: 800; }
+    .recap-card h3 { margin: 13px 0 6px; font-size: 16px; line-height: 1.2; }
+    .recap-card p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .footer { margin-top: 52px; padding: 20px 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .footer code { color: var(--ink); }
+
+    @media (max-width: 1050px) {
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .explorer, .core-explorer, .threads-grid, .isa-grid { grid-template-columns: 1fr; }
+      .inspector { min-height: 320px; }
+      .stage-detail { grid-template-columns: 1fr; }
+      .lane-grid { grid-template-columns: repeat(2, 1fr); }
+      .recap-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 680px) {
+      .page { width: min(100% - 18px, 1280px); padding-top: 10px; }
+      .hero { padding: 24px 20px; border-radius: 20px; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .launch-track, .stage-rail { grid-template-columns: repeat(2, 1fr); }
+      .stage::after { display: none; }
+      .lane-grid, .recap-grid, .memory-path, .memory-notes { grid-template-columns: 1fr; }
+      .launch-note { grid-template-columns: 1fr; gap: 4px; }
+      .diagram-card { overflow-x: auto; overflow-y: hidden; }
+      .gpu-svg { min-width: 720px; min-height: 0; }
+      .pan-hint { display: inline; }
+      .lane-pair { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="eyebrow">Interactive architecture map · RTL-grounded</div>
+      <h1>Think of tiny-gpu as one instruction broadcast to many lanes.</h1>
+      <p>The dispatcher hands a <strong>block</strong> to each core. A core shares its scheduler, fetcher, and decoder across up to four threads, while every thread keeps its own registers, ALU, LSU, and PC.</p>
+      <div class="hero-answer"><strong>The core mental model:</strong> GPU → blocks → cores → threads/lanes. Program memory supplies one instruction stream; data memory supplies per-lane operands. Control is shared, data is lane-local, and memory is asynchronous.</div>
+      <div class="metrics" aria-label="tiny-gpu key parameters">
+        <div class="metric"><strong>2</strong><span>compute cores</span></div>
+        <div class="metric"><strong>4</strong><span>thread lanes / core</span></div>
+        <div class="metric"><strong>8</strong><span>hardware lane slots</span></div>
+        <div class="metric"><strong>256 × 16b</strong><span>program memory</span></div>
+        <div class="metric"><strong>256 × 8b</strong><span>data memory</span></div>
+        <div class="metric"><strong>4</strong><span>data memory channels</span></div>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="Page sections">
+      <a href="#gpu">GPU map</a>
+      <a href="#launch">Kernel launch</a>
+      <a href="#core">Core anatomy</a>
+      <a href="#lifecycle">Instruction lifecycle</a>
+      <a href="#threads">Thread lanes</a>
+      <a href="#memory">Memory path</a>
+      <a href="#isa">ISA</a>
+      <a href="#recap">Five rules</a>
+    </nav>
+
+    <main>
+      <section id="gpu">
+        <div class="section-head">
+          <div class="kicker">01 · Whole machine</div>
+          <h2>The GPU is a dispatcher around a small pool of cores.</h2>
+          <p>Click any block for its job and key signals. The controllers are adapters: cores ask for memory in parallel, but external memory exposes only a few channels.</p>
+        </div>
+
+        <div class="explorer">
+          <div class="panel diagram-card">
+            <div class="diagram-title">
+              <span><strong>Top-level data and control flow</strong> · click the components<span class="pan-hint"> · scroll to pan →</span></span>
+              <div class="legend" aria-label="Color legend">
+                <span><i class="swatch" style="background:var(--control)"></i>control</span>
+                <span><i class="swatch" style="background:var(--compute)"></i>compute</span>
+                <span><i class="swatch" style="background:var(--memory)"></i>memory access</span>
+                <span><i class="swatch" style="background:var(--storage)"></i>global memory</span>
+              </div>
+            </div>
+
+            <svg class="gpu-svg" id="gpu-map" viewBox="0 0 1120 650" role="img" aria-label="tiny-gpu top-level component diagram">
+              <defs>
+                <marker id="arrow-gpu" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#87929d"></path>
+                </marker>
+                <marker id="arrow-gpu-strong" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#556577"></path>
+                </marker>
+              </defs>
+
+              <rect class="boundary" x="145" y="34" width="720" height="574" rx="20"></rect>
+              <text class="boundary-label" x="166" y="58">GPU RTL BOUNDARY</text>
+
+              <g class="node shared" data-component="host" tabindex="0" role="button" aria-label="Host and testbench">
+                <rect x="18" y="94" width="104" height="92" rx="13"></rect>
+                <text class="tag" x="32" y="116">HOST</text>
+                <text class="title" x="32" y="140">Testbench</text>
+                <text class="sub" x="32" y="158">load + config</text>
+                <text class="sub" x="32" y="173">start / done</text>
+              </g>
+
+              <g class="node control" data-component="dcr" tabindex="0" role="button" aria-label="Device control register">
+                <rect x="178" y="82" width="208" height="76" rx="13"></rect>
+                <text class="tag" x="194" y="105">CONTROL</text>
+                <text class="title" x="194" y="129">Device control register</text>
+                <text class="sub" x="194" y="147">thread_count[7:0]</text>
+              </g>
+
+              <g class="node control" data-component="dispatcher" tabindex="0" role="button" aria-label="Block dispatcher">
+                <rect x="430" y="82" width="388" height="76" rx="13"></rect>
+                <text class="tag" x="446" y="105">CONTROL</text>
+                <text class="title" x="446" y="129">Block dispatcher</text>
+                <text class="sub" x="446" y="147">ceil(threads / 4) blocks · assign idle cores · done</text>
+              </g>
+
+              <g class="node compute" data-component="core0" tabindex="0" role="button" aria-label="Compute core zero">
+                <rect x="178" y="218" width="286" height="178" rx="15"></rect>
+                <text class="tag" x="194" y="242">COMPUTE</text>
+                <text class="title" x="194" y="269">Core 0</text>
+                <text class="sub" x="194" y="290">one block at a time</text>
+                <text class="sub" x="194" y="309">shared scheduler + fetch/decode</text>
+                <text class="sub" x="194" y="328">4 × (registers, ALU, LSU, PC)</text>
+                <text class="sub" x="194" y="359">start · reset · block_id · thread_count</text>
+              </g>
+
+              <g class="node compute" data-component="core1" tabindex="0" role="button" aria-label="Compute core one">
+                <rect x="516" y="218" width="302" height="178" rx="15"></rect>
+                <text class="tag" x="532" y="242">COMPUTE</text>
+                <text class="title" x="532" y="269">Core 1</text>
+                <text class="sub" x="532" y="290">one block at a time</text>
+                <text class="sub" x="532" y="309">shared scheduler + fetch/decode</text>
+                <text class="sub" x="532" y="328">4 × (registers, ALU, LSU, PC)</text>
+                <text class="sub" x="532" y="359">start · reset · block_id · thread_count</text>
+              </g>
+
+              <g class="node shared dashed" data-component="cache" tabindex="0" role="button" aria-label="Cache work in progress">
+                <rect x="178" y="420" width="640" height="54" rx="12"></rect>
+                <text class="tag" x="194" y="442">NOT IN CURRENT RTL</text>
+                <text class="title" x="194" y="462">Cache (WIP)</text>
+                <text class="sub" x="348" y="462">future home for reused program/data lines</text>
+              </g>
+
+              <g class="node memory" data-component="program-controller" tabindex="0" role="button" aria-label="Program memory controller">
+                <rect x="178" y="506" width="286" height="76" rx="13"></rect>
+                <text class="tag" x="194" y="529">MEMORY ACCESS</text>
+                <text class="title" x="194" y="553">Program controller</text>
+                <text class="sub" x="194" y="571">2 fetchers → 1 read channel</text>
+              </g>
+
+              <g class="node memory" data-component="data-controller" tabindex="0" role="button" aria-label="Data memory controller">
+                <rect x="516" y="506" width="302" height="76" rx="13"></rect>
+                <text class="tag" x="532" y="529">MEMORY ACCESS</text>
+                <text class="title" x="532" y="553">Data controller</text>
+                <text class="sub" x="532" y="571">8 LSUs → 4 read/write channels</text>
+              </g>
+
+              <g class="node storage" data-component="program-memory" tabindex="0" role="button" aria-label="Program memory">
+                <rect x="940" y="82" width="156" height="112" rx="13"></rect>
+                <text class="tag" x="956" y="105">GLOBAL</text>
+                <text class="title" x="956" y="132">Program</text>
+                <text class="title" x="956" y="151">memory</text>
+                <text class="sub" x="956" y="174">256 × 16-bit</text>
+              </g>
+
+              <g class="node storage" data-component="data-memory" tabindex="0" role="button" aria-label="Data memory">
+                <rect x="940" y="506" width="156" height="112" rx="13"></rect>
+                <text class="tag" x="956" y="529">GLOBAL</text>
+                <text class="title" x="956" y="556">Data</text>
+                <text class="title" x="956" y="575">memory</text>
+                <text class="sub" x="956" y="598">256 × 8-bit</text>
+              </g>
+
+              <path class="arrow strong" d="M122 140 H178" marker-end="url(#arrow-gpu-strong)"></path>
+              <path class="arrow strong" d="M386 120 H430" marker-end="url(#arrow-gpu-strong)"></path>
+              <path class="arrow strong" d="M624 158 V218" marker-end="url(#arrow-gpu-strong)"></path>
+              <path class="arrow strong" d="M570 158 V184 H320 V218" marker-end="url(#arrow-gpu-strong)"></path>
+              <path class="arrow dashed" d="M320 218 V184 H624" marker-end="url(#arrow-gpu-strong)"></path>
+              <path class="arrow" d="M321 396 V506" marker-end="url(#arrow-gpu)"></path>
+              <path class="arrow" d="M666 396 V506" marker-end="url(#arrow-gpu)"></path>
+              <path class="arrow" d="M464 544 H940" marker-end="url(#arrow-gpu)"></path>
+              <path class="arrow" d="M818 544 H940" marker-end="url(#arrow-gpu)"></path>
+
+              <text class="bus-label" x="646" y="171">block_id · thread_count · start</text>
+              <text class="bus-label" x="335" y="470">fetchers → instructions</text>
+              <text class="bus-label" x="678" y="470">LSUs → valid / ready</text>
+              <text class="bus-label" x="890" y="538">1 channel</text>
+              <text class="bus-label" x="874" y="568">4 channels</text>
+              <text class="bus-label" x="122" y="132">threads</text>
+              <text class="bus-label" x="354" y="206">done (dashed)</text>
+            </svg>
+          </div>
+
+          <aside class="inspector" id="gpu-inspector" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section id="launch">
+        <div class="section-head">
+          <div class="kicker">02 · Startup sequence</div>
+          <h2>A kernel launch is mostly bookkeeping, then a block handoff.</h2>
+          <p>The host loads memories and the thread count before asserting <code>start</code>. From there the dispatcher keeps cores fed until every block reports <code>done</code>.</p>
+        </div>
+
+        <div class="panel launch-panel">
+          <div class="launch-top">
+            <h3>Launch walkthrough · highlighted blocks follow the active step</h3>
+            <div class="buttons">
+              <button class="btn primary" id="launch-play" type="button">▶ Play launch</button>
+              <button class="btn" id="launch-reset" type="button">Reset</button>
+            </div>
+          </div>
+          <div class="launch-track" id="launch-track" aria-label="Kernel launch steps">
+            <button class="launch-step" type="button" data-launch-step="0"><span class="num">STEP 01</span><strong>Load memories</strong></button>
+            <button class="launch-step" type="button" data-launch-step="1"><span class="num">STEP 02</span><strong>Set thread_count</strong></button>
+            <button class="launch-step" type="button" data-launch-step="2"><span class="num">STEP 03</span><strong>Assert start</strong></button>
+            <button class="launch-step" type="button" data-launch-step="3"><span class="num">STEP 04</span><strong>Dispatch blocks</strong></button>
+            <button class="launch-step" type="button" data-launch-step="4"><span class="num">STEP 05</span><strong>Cores execute</strong></button>
+            <button class="launch-step" type="button" data-launch-step="5"><span class="num">STEP 06</span><strong>Kernel done</strong></button>
+          </div>
+          <div class="launch-note" id="launch-note" aria-live="polite">
+            <div class="badge" id="launch-badge">STEP 01</div>
+            <p id="launch-copy">The testbench loads 16-bit instructions into program memory and 8-bit operands into data memory. No GPU core is active yet.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="core">
+        <div class="section-head">
+          <div class="kicker">03 · Inside a core</div>
+          <h2>Control is shared; execution state is replicated per thread.</h2>
+          <p>Every core executes one block at a time. Its scheduler, fetcher, and decoder are shared, while each enabled lane has its own register file, ALU, LSU, PC, and NZP state.</p>
+        </div>
+
+        <div class="core-explorer">
+          <div class="panel core-canvas">
+            <div class="shared-stack">
+              <button class="component-button" type="button" data-component="scheduler">
+                <span class="row"><strong>1 · Scheduler</strong><small>one per core</small></span>
+                <span>Owns <code>core_state</code> and the shared <code>current_pc</code>. Sequences every instruction through six execution states and stops the block on <code>RET</code>.</span>
+              </button>
+              <div class="down-arrow" aria-hidden="true">↓</div>
+              <button class="component-button" type="button" data-component="fetcher">
+                <span class="row"><strong>2 · Fetcher</strong><small>one per core</small></span>
+                <span>Requests the 16-bit instruction at <code>current_pc</code> from program memory and reports <code>FETCHED</code>.</span>
+              </button>
+              <div class="down-arrow" aria-hidden="true">↓</div>
+              <button class="component-button" type="button" data-component="decoder">
+                <span class="row"><strong>3 · Decoder</strong><small>one per core</small></span>
+                <span>Extracts register addresses and turns the opcode into write enables, ALU muxes, memory enables, branch control, and <code>RET</code>.</span>
+              </button>
+            </div>
+
+            <div class="split-label"><span><b>Shared control</b> — same instruction and control signals for the whole block</span><span>decoded bus ↓</span></div>
+            <div class="broadcast">one instruction · one control bundle · four lane-local data paths</div>
+
+            <div class="lane-grid" aria-label="Four per-thread execution lanes">
+              <article class="lane">
+                <div class="lane-head"><strong>Lane 0</strong><code>%threadIdx=0</code></div>
+                <button class="unit" type="button" data-component="register-file"><b>Registers</b><span>16 × 8-bit</span></button>
+                <div class="lane-pair">
+                  <button class="unit" type="button" data-component="alu"><b>ALU</b><span>math + CMP</span></button>
+                  <button class="unit" type="button" data-component="lsu"><b>LSU</b><span>load / store</span></button>
+                </div>
+                <button class="unit" type="button" data-component="pc"><b>PC + NZP</b><span>next_pc</span></button>
+                <div class="lane-footer">enable = tid &lt; thread_count</div>
+              </article>
+              <article class="lane">
+                <div class="lane-head"><strong>Lane 1</strong><code>%threadIdx=1</code></div>
+                <button class="unit" type="button" data-component="register-file"><b>Registers</b><span>16 × 8-bit</span></button>
+                <div class="lane-pair">
+                  <button class="unit" type="button" data-component="alu"><b>ALU</b><span>math + CMP</span></button>
+                  <button class="unit" type="button" data-component="lsu"><b>LSU</b><span>load / store</span></button>
+                </div>
+                <button class="unit" type="button" data-component="pc"><b>PC + NZP</b><span>next_pc</span></button>
+                <div class="lane-footer">enable = tid &lt; thread_count</div>
+              </article>
+              <article class="lane">
+                <div class="lane-head"><strong>Lane 2</strong><code>%threadIdx=2</code></div>
+                <button class="unit" type="button" data-component="register-file"><b>Registers</b><span>16 × 8-bit</span></button>
+                <div class="lane-pair">
+                  <button class="unit" type="button" data-component="alu"><b>ALU</b><span>math + CMP</span></button>
+                  <button class="unit" type="button" data-component="lsu"><b>LSU</b><span>load / store</span></button>
+                </div>
+                <button class="unit" type="button" data-component="pc"><b>PC + NZP</b><span>next_pc</span></button>
+                <div class="lane-footer">enable = tid &lt; thread_count</div>
+              </article>
+              <article class="lane">
+                <div class="lane-head"><strong>Lane 3</strong><code>%threadIdx=3</code></div>
+                <button class="unit" type="button" data-component="register-file"><b>Registers</b><span>16 × 8-bit</span></button>
+                <div class="lane-pair">
+                  <button class="unit" type="button" data-component="alu"><b>ALU</b><span>math + CMP</span></button>
+                  <button class="unit" type="button" data-component="lsu"><b>LSU</b><span>load / store</span></button>
+                </div>
+                <button class="unit" type="button" data-component="pc"><b>PC + NZP</b><span>next_pc</span></button>
+                <div class="lane-footer">enable = tid &lt; thread_count</div>
+              </article>
+            </div>
+            <div class="busbar">per-lane LSU read/write requests → data memory controller → 4 channels</div>
+          </div>
+
+          <aside class="inspector" id="core-inspector" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section id="lifecycle">
+        <div class="section-head">
+          <div class="kicker">04 · One instruction</div>
+          <h2>The core walks a six-state loop, not a CPU-style pipeline.</h2>
+          <p>This implementation completes most of one instruction’s stages before fetching the next. Memory instructions stretch <code>WAIT</code>; arithmetic instructions usually pass through it immediately.</p>
+        </div>
+
+        <div class="panel lifecycle">
+          <div class="lifecycle-top">
+            <div>
+              <strong>Instruction walkthrough</strong>
+              <div class="mono" style="font-size:11px;color:var(--muted);margin-top:2px">core_state: IDLE → FETCH → DECODE → REQUEST → WAIT → EXECUTE → UPDATE</div>
+            </div>
+            <div class="mode-switch" role="group" aria-label="Choose instruction type">
+              <button type="button" data-mode="add" class="active">ADD R6, R4, R5</button>
+              <button type="button" data-mode="ldr">LDR R4, R4</button>
+            </div>
+          </div>
+
+          <div class="stage-rail" id="stage-rail" aria-label="Instruction stages">
+            <button class="stage" type="button" data-stage="0"><span class="state">001</span><strong>FETCH</strong><small>get instruction</small></button>
+            <button class="stage" type="button" data-stage="1"><span class="state">010</span><strong>DECODE</strong><small>make controls</small></button>
+            <button class="stage" type="button" data-stage="2"><span class="state">011</span><strong>REQUEST</strong><small>read regs / start LSU</small></button>
+            <button class="stage" type="button" data-stage="3"><span class="state">100</span><strong>WAIT</strong><small>resolve memory</small></button>
+            <button class="stage" type="button" data-stage="4"><span class="state">101</span><strong>EXECUTE</strong><small>ALU + next PC</small></button>
+            <button class="stage" type="button" data-stage="5"><span class="state">110</span><strong>UPDATE</strong><small>write regs / advance</small></button>
+          </div>
+
+          <div class="stage-detail">
+            <div class="stage-copy">
+              <h3 id="stage-title">FETCH</h3>
+              <p id="stage-text"></p>
+              <div class="chips" id="stage-chips"></div>
+            </div>
+            <aside class="stage-aside">
+              <h4>Watch for</h4>
+              <ul id="stage-watch"></ul>
+            </aside>
+          </div>
+
+          <div class="controls-row">
+            <button class="btn" id="stage-prev" type="button">← Previous</button>
+            <button class="btn primary" id="stage-next" type="button">Next stage →</button>
+            <button class="btn" id="stage-play" type="button">▶ Auto-play</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="threads">
+        <div class="section-head">
+          <div class="kicker">05 · SIMD / SIMT mental model</div>
+          <h2>One instruction stream, four private register contexts.</h2>
+          <p>The lanes receive the same control signals but resolve different data because their register files and special registers differ. tiny-gpu assumes all lanes converge to one PC.</p>
+        </div>
+
+        <div class="threads-grid">
+          <div class="panel threads-copy">
+            <h3>What is shared, what is private?</h3>
+            <p>This is the distinction that unlocks the architecture: the core is not four independent CPUs. It is one control path with four replicated datapaths.</p>
+            <div class="rule-list">
+              <div class="rule"><b>1</b><p><strong>Shared:</strong> scheduler state, current PC, fetched instruction, decoded control signals.</p></div>
+              <div class="rule"><b>2</b><p><strong>Private:</strong> 16-register file, ALU result, LSU state, next-PC/NZP state.</p></div>
+              <div class="rule"><b>3</b><p><strong>Special registers:</strong> R13 = <code>%blockIdx</code>, R14 = <code>%blockDim</code>, R15 = <code>%threadIdx</code>. They let one program address different data per lane.</p></div>
+              <div class="rule"><b>4</b><p><strong>Simplification:</strong> per-thread PCs exist, but the scheduler advances using the last lane’s <code>next_pc</code>. Divergent branches are not supported.</p></div>
+            </div>
+          </div>
+
+          <div class="panel lane-table-wrap">
+            <table class="lane-table" aria-label="Matrix addition lane mapping">
+              <thead><tr><th>global i</th><th>blockIdx</th><th>threadIdx</th><th>A[i]</th><th>B[i]</th><th>C[i]</th></tr></thead>
+              <tbody>
+                <tr><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+                <tr><td>1</td><td>0</td><td>1</td><td>1</td><td>1</td><td>2</td></tr>
+                <tr><td>2</td><td>0</td><td>2</td><td>2</td><td>2</td><td>4</td></tr>
+                <tr><td>3</td><td>0</td><td>3</td><td>3</td><td>3</td><td>6</td></tr>
+                <tr><td>4</td><td>1</td><td>0</td><td>4</td><td>4</td><td>8</td></tr>
+                <tr><td>5</td><td>1</td><td>1</td><td>5</td><td>5</td><td>10</td></tr>
+                <tr><td>6</td><td>1</td><td>2</td><td>6</td><td>6</td><td>12</td></tr>
+                <tr><td>7</td><td>1</td><td>3</td><td>7</td><td>7</td><td>14</td></tr>
+              </tbody>
+            </table>
+            <p class="table-note"><code>i = blockIdx × blockDim + threadIdx</code>. The matadd example launches 8 threads: two 4-thread blocks, one block per core.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="memory">
+        <div class="section-head">
+          <div class="kicker">06 · Memory is the long pole</div>
+          <h2>Many lanes ask; a channel-limited controller serializes access.</h2>
+          <p>Each enabled thread has its own LSU, so one core can have four outstanding data-memory requests. The controller maps eight total LSU consumers onto four external read/write channels.</p>
+        </div>
+
+        <div class="panel">
+          <div class="memory-path">
+            <div class="memory-column" aria-label="Consumers">
+              <div class="memory-box"><strong>Core 0 · 4 LSUs</strong><span>one per thread lane</span></div>
+              <div class="memory-box"><strong>Core 1 · 4 LSUs</strong><span>one per thread lane</span></div>
+              <div class="memory-box"><strong>2 fetchers</strong><span>program instruction reads</span></div>
+            </div>
+            <div class="memory-arrow">
+              <div class="big">→</div>
+              <div>valid / ready<br>request + relay</div>
+            </div>
+            <div class="memory-column">
+              <div class="memory-box control"><strong>Program controller</strong><span>2 consumers → 1 channel · read-only</span></div>
+              <div class="memory-box data"><strong>Data controller</strong><span>8 consumers → 4 channels · read/write</span></div>
+              <div class="memory-box storage"><strong>External memories</strong><span>program: 256 × 16b · data: 256 × 8b</span></div>
+            </div>
+          </div>
+          <div class="handshake" aria-label="Memory handshake signals">
+            <code>mem_read_valid</code><span>→</span><code>mem_read_ready</code><span>→</span><code>mem_read_data</code>
+            <code>mem_write_valid</code><span>→</span><code>mem_write_ready</code>
+          </div>
+          <div class="memory-notes">
+            <div class="note"><strong>Why WAIT exists</strong><p>LDR/STR are asynchronous. The core stays in <code>WAIT</code> until every active LSU leaves REQUESTING/WAITING.</p></div>
+            <div class="note"><strong>Why controllers exist</strong><p>They prevent eight LSUs plus fetchers from pretending external memory has unlimited ports.</p></div>
+            <div class="note"><strong>What is missing</strong><p>No cache, coalescing, bank model, or pipelined overlap. Each instruction’s memory latency is exposed.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="isa">
+        <div class="section-head">
+          <div class="kicker">07 · Instruction set</div>
+          <h2>Eleven instructions are enough to express the kernels.</h2>
+          <p>The ISA is intentionally tiny: branch, compare, four arithmetic operations, two memory operations, constant load, NOP, and return.</p>
+        </div>
+
+        <div class="isa-grid">
+          <div class="panel isa-table-wrap">
+            <table class="isa-table">
+              <thead><tr><th>Instruction</th><th>Opcode</th><th>Effect</th><th>Main units</th></tr></thead>
+              <tbody>
+                <tr><td>NOP</td><td>0000</td><td>Do nothing; advance PC.</td><td>scheduler, PC</td></tr>
+                <tr><td>BRnzp</td><td>0001</td><td>Branch to immediate when NZP matches selected n/z/p bits.</td><td>PC + NZP</td></tr>
+                <tr><td>CMP</td><td>0010</td><td>Compute sign/zero of <code>rs − rt</code>; write NZP.</td><td>ALU, PC</td></tr>
+                <tr><td>ADD</td><td>0011</td><td><code>rd = rs + rt</code></td><td>ALU</td></tr>
+                <tr><td>SUB</td><td>0100</td><td><code>rd = rs − rt</code></td><td>ALU</td></tr>
+                <tr><td>MUL</td><td>0101</td><td><code>rd = rs × rt</code></td><td>ALU</td></tr>
+                <tr><td>DIV</td><td>0110</td><td><code>rd = rs ÷ rt</code></td><td>ALU</td></tr>
+                <tr><td>LDR</td><td>0111</td><td><code>rd = data_mem[rs]</code></td><td>LSU + controller</td></tr>
+                <tr><td>STR</td><td>1000</td><td><code>data_mem[rs] = rt</code></td><td>LSU + controller</td></tr>
+                <tr><td>CONST</td><td>1001</td><td><code>rd = immediate[7:0]</code></td><td>decoder, registers</td></tr>
+                <tr><td>RET</td><td>1111</td><td>Mark the block complete.</td><td>scheduler, dispatcher</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <aside class="panel format-card">
+            <h3>16-bit instruction format</h3>
+            <p style="color:var(--muted);margin:0;font-size:13px">The decoder slices fixed bit ranges. Some opcodes reinterpret the middle bits as an immediate or branch mask.</p>
+            <div class="bit-word" aria-label="Instruction bit fields">
+              <div><strong>[15:12]</strong>opcode</div>
+              <div><strong>[11:8]</strong>rd / NZP</div>
+              <div><strong>[7:4]</strong>rs</div>
+              <div><strong>[3:0]</strong>rt</div>
+            </div>
+            <p class="table-note">CONST and BRnzp use <code>instruction[7:0]</code> as an 8-bit immediate.</p>
+            <div class="register-list">
+              <div class="reg-row"><code>R0–R12</code><span>general-purpose, writable, 8-bit</span></div>
+              <div class="reg-row"><code>R13</code><span><code>%blockIdx</code> — assigned by the dispatcher</span></div>
+              <div class="reg-row"><code>R14</code><span><code>%blockDim</code> — threads per block, fixed at 4 here</span></div>
+              <div class="reg-row"><code>R15</code><span><code>%threadIdx</code> — constant lane index</span></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="recap">
+        <div class="section-head">
+          <div class="kicker">08 · Keep these five ideas</div>
+          <h2>The mental model on one screen.</h2>
+        </div>
+        <div class="recap-grid">
+          <article class="recap-card"><div class="n">1</div><h3>Blocks flow to cores</h3><p>The dispatcher does not run threads itself. It partitions <code>thread_count</code> into blocks and feeds idle cores.</p></article>
+          <article class="recap-card"><div class="n">2</div><h3>Control is shared</h3><p>One scheduler, fetcher, decoder, instruction, and current PC drive all lanes in a block.</p></article>
+          <article class="recap-card"><div class="n">3</div><h3>State is lane-local</h3><p>Registers, ALU, LSU, PC, and NZP are replicated. Special registers make each lane address different data.</p></article>
+          <article class="recap-card"><div class="n">4</div><h3>Memory is asynchronous</h3><p>LSUs use valid/ready handshakes. Controllers multiplex many consumers onto few external channels.</p></article>
+          <article class="recap-card"><div class="n">5</div><h3>It is deliberately simple</h3><p>No cache, no pipelining, no independent lane PCs, no branch divergence. Understand this machine before scaling up.</p></article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Built from the RTL in <code>src/</code> at commit <code>02b6c2c</code>. Open this file directly in a browser; it has no external dependencies. Source entry points: <code>src/gpu.sv</code>, <code>src/dispatch.sv</code>, <code>src/core.sv</code>, <code>src/scheduler.sv</code>, <code>src/registers.sv</code>, and <code>src/controller.sv</code>.
+    </footer>
+  </div>
+
+  <script>
+    const components = {
+      host: {
+        tag: "Testbench",
+        title: "Host / testbench",
+        summary: "The outside world that loads kernel state before asserting start.",
+        details: ["Writes 16-bit instructions into program memory.", "Writes 8-bit operands and matrices into data memory.", "Programs the DCR, pulses start, and waits for done."],
+        remember: "The GPU does not fetch a kernel from disk or parse assembly. The testbench supplies already-encoded memory images.",
+        source: "test/test_matadd.py · test/helpers/setup.py"
+      },
+      dcr: {
+        tag: "GPU control",
+        title: "Device control register",
+        summary: "A tiny configuration register that stores how many threads the current kernel wants to launch.",
+        details: ["Holds thread_count[7:0].", "Written by the host only when device_control_write_enable is high.", "The dispatcher uses it to compute the number of blocks."],
+        remember: "In this design the DCR contains only thread_count—not grid dimensions, arguments, or a launch descriptor.",
+        source: "src/dcr.sv"
+      },
+      dispatcher: {
+        tag: "GPU control",
+        title: "Block dispatcher",
+        summary: "Turns a global thread count into blocks and assigns each block to an idle core.",
+        details: ["total_blocks = ceil(thread_count / THREADS_PER_BLOCK).", "Sends block_id and the block's exact thread_count to a core.", "Counts blocks_done and raises done when every block retires."],
+        remember: "A core handles one block at a time. Dispatcher throughput is therefore tied to core availability.",
+        source: "src/dispatch.sv"
+      },
+      core0: {
+        tag: "Compute",
+        title: "Compute core",
+        summary: "Executes one block at a time with shared control and four replicated thread lanes.",
+        details: ["Shared: scheduler, fetcher, decoder, current_pc.", "Per lane: registers, ALU, LSU, PC/NZP.", "Receives block_id, thread_count, start, and reset; returns done."],
+        remember: "A core is not four CPUs. It is one instruction stream attached to four data paths.",
+        source: "src/core.sv"
+      },
+      core1: {
+        tag: "Compute",
+        title: "Compute core",
+        summary: "A second identical core, allowing two blocks to execute concurrently.",
+        details: ["The RTL defaults to NUM_CORES = 2.", "Each core has its own scheduler, fetcher, decoder, and lane resources.", "Both cores share the top-level memory controllers."],
+        remember: "More cores mean more concurrent blocks, but they also share the same external memory channels.",
+        source: "src/core.sv"
+      },
+      cache: {
+        tag: "Not implemented",
+        title: "Cache (work in progress)",
+        summary: "The architecture diagrams reserve a place for a cache, but the current RTL has no cache module.",
+        details: ["Repeated program/data reads currently go straight through the controllers.", "A future cache would sit between consumers and external memory.", "Adding one would make fetch and load latency less exposed."],
+        remember: "Do not infer cache behavior from the architecture sketch; it is a future optimization.",
+        source: "README.md · Cache (WIP)"
+      },
+      "program-controller": {
+        tag: "Memory access",
+        title: "Program memory controller",
+        summary: "Multiplexes instruction fetches from both cores onto one read-only external channel.",
+        details: ["NUM_CONSUMERS = 2 (one fetcher per core).", "NUM_CHANNELS = 1 and WRITE_ENABLE = 0.", "Relays mem_read_data back to the requesting fetcher."],
+        remember: "Instruction fetch is another shared bandwidth resource; it is not free or unlimited.",
+        source: "src/controller.sv · src/gpu.sv"
+      },
+      "data-controller": {
+        tag: "Memory access",
+        title: "Data memory controller",
+        summary: "Arbitrates eight LSU requesters across four external read/write channels.",
+        details: ["NUM_CONSUMERS = NUM_CORES × THREADS_PER_BLOCK = 8.", "NUM_CHANNELS = 4.", "Tracks which consumer each channel serves and relays ready/data or ready acknowledgement."],
+        remember: "The controller is the bridge between per-thread LSU concurrency and limited external memory ports.",
+        source: "src/controller.sv · src/gpu.sv"
+      },
+      "program-memory": {
+        tag: "Global memory",
+        title: "Program memory",
+        summary: "A 256-row array of 16-bit instruction words, read-only from the GPU's perspective.",
+        details: ["Address width: 8 bits.", "Data width: 16 bits.", "Loaded by the testbench before kernel launch."],
+        remember: "Every core fetches from the same instruction address space, but each block can follow a different control path over time.",
+        source: "test/helpers/memory.py · src/gpu.sv"
+      },
+      "data-memory": {
+        tag: "Global memory",
+        title: "Data memory",
+        summary: "A 256-row byte-addressed memory holding kernel inputs and outputs.",
+        details: ["Address width: 8 bits.", "Data width: 8 bits.", "Four external channels support concurrent reads and writes."],
+        remember: "There is no cache, shared-memory hierarchy, or coalescing in this implementation. The controller is the whole memory system.",
+        source: "test/helpers/memory.py · src/gpu.sv"
+      },
+      scheduler: {
+        tag: "Core control",
+        title: "Scheduler",
+        summary: "The per-core state machine that sequences every instruction for the active block.",
+        details: ["Owns core_state and shared current_pc.", "Walks FETCH → DECODE → REQUEST → WAIT → EXECUTE → UPDATE.", "Uses the last lane's next_pc as the converged block PC; asserts done on RET."],
+        remember: "The scheduler is sequential at instruction granularity. There is no instruction pipeline in this version.",
+        source: "src/scheduler.sv"
+      },
+      fetcher: {
+        tag: "Core control",
+        title: "Fetcher",
+        summary: "Requests the instruction at current_pc and holds it for the decoder.",
+        details: ["States: IDLE → FETCHING → FETCHED.", "Asserts program_mem_read_valid and waits for read_ready.", "Captures the returned 16-bit instruction."],
+        remember: "Each core has one fetcher because all lanes in a block share the same instruction stream.",
+        source: "src/fetcher.sv"
+      },
+      decoder: {
+        tag: "Core control",
+        title: "Decoder",
+        summary: "Converts the 16-bit instruction into register addresses and control signals.",
+        details: ["Extracts rd, rs, rt, immediate, and nzp fields.", "Generates register-write, memory-read/write, ALU, branch, and RET controls.", "The same decoded bundle drives every active lane."],
+        remember: "Broadcast control plus private data is the heart of the SIMD execution model.",
+        source: "src/decoder.sv"
+      },
+      "register-file": {
+        tag: "Per lane",
+        title: "Register file",
+        summary: "A private 16 × 8-bit state block for one hardware thread.",
+        details: ["R0–R12 are general-purpose and writable.", "R13 = %blockIdx, R14 = %blockDim, R15 = %threadIdx.", "Reads rs/rt in REQUEST; writes rd in UPDATE."],
+        remember: "The special registers are what turn the same kernel code into different per-thread addresses.",
+        source: "src/registers.sv"
+      },
+      alu: {
+        tag: "Per lane",
+        title: "ALU",
+        summary: "Performs integer arithmetic and produces the comparison bits used by CMP.",
+        details: ["ADD, SUB, MUL, DIV use the arithmetic mux.", "CMP produces {greater-than, equal, less-than} in alu_out[2:0].", "Result is captured during EXECUTE and written back during UPDATE."],
+        remember: "The ALU is replicated per lane, but the operation selection is shared from the decoder.",
+        source: "src/alu.sv"
+      },
+      lsu: {
+        tag: "Per lane",
+        title: "Load-store unit",
+        summary: "Runs the asynchronous valid/ready protocol for one lane's data-memory access.",
+        details: ["States: IDLE → REQUESTING → WAITING → DONE.", "LDR sends mem_read_valid and captures mem_read_data.", "STR sends mem_write_valid with rs as address and rt as data."],
+        remember: "A memory instruction makes the whole core wait until every enabled lane's LSU is done.",
+        source: "src/lsu.sv"
+      },
+      pc: {
+        tag: "Per lane",
+        title: "Program counter + NZP",
+        summary: "Computes the next instruction address and retains condition state for branches.",
+        details: ["Normally next_pc = current_pc + 1.", "BRnzp may select decoded_immediate when NZP matches.", "CMP updates NZP during UPDATE."],
+        remember: "Every lane computes next_pc, but the scheduler advances the block using the last lane's result—an explicit convergence assumption.",
+        source: "src/pc.sv · src/scheduler.sv"
+      }
+    };
+
+    function renderComponent(target, key) {
+      const c = components[key];
+      if (!c || !target) return;
+      target.innerHTML = `
+        <div class="eyebrow">${c.tag}</div>
+        <h3>${c.title}</h3>
+        <p class="summary">${c.summary}</p>
+        <ul class="detail-list">${c.details.map(item => `<li>${item}</li>`).join("")}</ul>
+        <div class="remember"><b>Mental shorthand:</b> ${c.remember}</div>
+        <div class="source">Source: ${c.source}</div>
+      `;
+    }
+
+    function wireInspector(rootSelector, inspectorSelector) {
+      const root = document.querySelector(rootSelector);
+      const inspector = document.querySelector(inspectorSelector);
+      if (!root || !inspector) return;
+      const nodes = Array.from(root.querySelectorAll("[data-component]"));
+      nodes.forEach(node => {
+        const activate = () => {
+          document.querySelectorAll("[data-component].selected").forEach(el => el.classList.remove("selected"));
+          root.querySelectorAll(`[data-component="${node.dataset.component}"]`).forEach(el => el.classList.add("selected"));
+          renderComponent(inspector, node.dataset.component);
+        };
+        node.addEventListener("click", activate);
+        node.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+      const first = nodes[0];
+      if (first) renderComponent(inspector, first.dataset.component);
+    }
+
+    wireInspector("#gpu-map", "#gpu-inspector");
+    wireInspector(".core-canvas", "#core-inspector");
+
+    const launchSteps = [
+      {
+        badge: "STEP 01", title: "Load memories",
+        copy: "The testbench loads 16-bit instructions into program memory and 8-bit operands into data memory. No GPU core is active yet.",
+        active: ["program-memory", "data-memory"]
+      },
+      {
+        badge: "STEP 02", title: "Set thread_count",
+        copy: "The host writes the kernel's global thread count into the device control register. For matadd this is 8 threads.",
+        active: ["dcr"]
+      },
+      {
+        badge: "STEP 03", title: "Assert start",
+        copy: "start tells the dispatcher to wake the cores. The dispatcher first resets its core slots and prepares to distribute blocks.",
+        active: ["dispatcher", "core0", "core1"]
+      },
+      {
+        badge: "STEP 04", title: "Dispatch blocks",
+        copy: "The dispatcher computes ceil(8 / 4) = 2 blocks. Core 0 receives block 0; Core 1 receives block 1. Each gets block_id, thread_count, and start.",
+        active: ["dispatcher", "core0", "core1"]
+      },
+      {
+        badge: "STEP 05", title: "Cores execute",
+        copy: "Each core runs its block instruction by instruction. Fetchers read program memory, LSUs issue data requests, and the controllers multiplex external memory access.",
+        active: ["core0", "core1", "program-controller", "data-controller"]
+      },
+      {
+        badge: "STEP 06", title: "Kernel complete",
+        copy: "When a core reaches RET it reports done. The dispatcher counts completed blocks and raises the GPU's done signal after the final block.",
+        active: ["dispatcher", "dcr"]
+      }
+    ];
+
+    let launchIndex = 0;
+    let launchTimer = null;
+    const launchCopy = document.getElementById("launch-copy");
+    const launchBadge = document.getElementById("launch-badge");
+    const launchButtons = Array.from(document.querySelectorAll("[data-launch-step]"));
+
+    function setLaunchStep(index) {
+      launchIndex = Math.max(0, Math.min(launchSteps.length - 1, index));
+      const step = launchSteps[launchIndex];
+      launchBadge.textContent = step.badge;
+      launchCopy.textContent = step.copy;
+      launchButtons.forEach(button => {
+        const n = Number(button.dataset.launchStep);
+        button.classList.toggle("active", n === launchIndex);
+        button.classList.toggle("done", n < launchIndex);
+      });
+      document.querySelectorAll("#gpu-map .node.flow").forEach(node => node.classList.remove("flow"));
+      step.active.forEach(key => {
+        document.querySelectorAll(`#gpu-map [data-component="${key}"]`).forEach(node => node.classList.add("flow"));
+      });
+    }
+
+    function stopLaunchPlayback() {
+      if (launchTimer) window.clearInterval(launchTimer);
+      launchTimer = null;
+      document.getElementById("launch-play").textContent = "▶ Play launch";
+    }
+
+    launchButtons.forEach(button => button.addEventListener("click", () => {
+      stopLaunchPlayback();
+      setLaunchStep(Number(button.dataset.launchStep));
+    }));
+
+    document.getElementById("launch-play").addEventListener("click", () => {
+      if (launchTimer) {
+        stopLaunchPlayback();
+        return;
+      }
+      setLaunchStep(0);
+      document.getElementById("launch-play").textContent = "❚❚ Pause";
+      launchTimer = window.setInterval(() => {
+        if (launchIndex >= launchSteps.length - 1) {
+          stopLaunchPlayback();
+          return;
+        }
+        setLaunchStep(launchIndex + 1);
+      }, 1350);
+    });
+
+    document.getElementById("launch-reset").addEventListener("click", () => {
+      stopLaunchPlayback();
+      setLaunchStep(0);
+    });
+
+    setLaunchStep(0);
+
+    const stageData = [
+      {
+        title: "FETCH",
+        text: "The scheduler enters FETCH and the per-core fetcher requests the 16-bit instruction at the shared current_pc.",
+        chips: ["core_state = 001", "fetcher: IDLE → FETCHING", "program_mem_read_valid"],
+        watch: ["One instruction fetch per core, not per lane.", "The scheduler waits for fetcher_state = FETCHED.", "Program memory has only one external channel."]
+      },
+      {
+        title: "DECODE",
+        text: "The decoder slices the instruction into rd/rs/rt/immediate/NZP fields and asserts the control signals for this opcode. One decoded bundle is broadcast to all active lanes.",
+        chips: ["core_state = 010", "register addresses", "write / memory / mux enables"],
+        watch: ["Control signals reset every decode before the opcode sets them.", "The decoder does not know lane values.", "RET and BRnzp set control signals rather than doing the work directly."]
+      },
+      {
+        title: "REQUEST",
+        text: "Each lane's register file reads rs and rt. If the instruction is LDR or STR, every enabled LSU starts its asynchronous memory request.",
+        chips: ["core_state = 011", "registers → rs / rt", "LSU: IDLE → REQUESTING"],
+        watch: ["The address for LDR/STR is rs.", "For STR, rt is the data to write.", "All active lanes make their requests in parallel, then contend at the controller."]
+      },
+      {
+        title: "WAIT",
+        text: "The scheduler waits until no LSU remains in REQUESTING or WAITING. Arithmetic instructions normally pass through immediately; LDR/STR may spend many cycles here.",
+        chips: ["core_state = 100", "LSU valid / ready", "memory controller channels"],
+        watch: ["This is where external memory latency becomes visible.", "The entire block waits if any active lane is still waiting.", "There is no cache or out-of-order continuation to hide this delay."]
+      },
+      {
+        title: "EXECUTE",
+        text: "Every active lane's ALU computes its result. CMP produces NZP comparison bits. Each lane's PC unit also computes its next_pc for this instruction.",
+        chips: ["core_state = 101", "ALU arithmetic or CMP", "next_pc = PC + 1 / branch"],
+        watch: ["Arithmetic mux is shared; operands are lane-local.", "CMP does not write a general register; it prepares NZP.", "All lanes execute the same operation at the same time."]
+      },
+      {
+        title: "UPDATE",
+        text: "The register file writes rd from the ALU, LSU, or immediate mux. NZP updates after CMP. The scheduler advances to next_pc, or marks the core done if this was RET.",
+        chips: ["core_state = 110", "register writeback", "current_pc ← next_pc"],
+        watch: ["Only R0–R12 are writable.", "The scheduler uses the last lane's next_pc, assuming convergence.", "After UPDATE the next instruction begins at FETCH."]
+      }
+    ];
+
+    const modeNotes = {
+      add: {
+        2: "For ADD, rs and rt are ordinary register reads; no LSU becomes active.",
+        3: "There are no pending LSU requests, so WAIT usually advances immediately.",
+        4: "Each lane's ALU computes rs + rt using its own values.",
+        5: "The ADD writes rd. The demo uses ADD R6, R4, R5."
+      },
+      ldr: {
+        2: "For LDR, the address is rs. Every active LSU enters REQUESTING and presents mem_read_valid.",
+        3: "The core remains here until the data controller gets each response and every LSU reaches DONE.",
+        4: "The ALU does little for LDR; load data is carried toward the register writeback mux.",
+        5: "The loaded LSU value is written to rd. The demo uses LDR R4, R4."
+      }
+    };
+
+    let stageIndex = 0;
+    let stageMode = "add";
+    let stageTimer = null;
+    const stageButtons = Array.from(document.querySelectorAll("[data-stage]"));
+    const stageTitle = document.getElementById("stage-title");
+    const stageText = document.getElementById("stage-text");
+    const stageChips = document.getElementById("stage-chips");
+    const stageWatch = document.getElementById("stage-watch");
+    const stagePlay = document.getElementById("stage-play");
+
+    function setStage(index) {
+      stageIndex = Math.max(0, Math.min(stageData.length - 1, index));
+      const data = stageData[stageIndex];
+      stageTitle.textContent = `${data.title} · ${stageMode.toUpperCase()}`;
+      stageText.textContent = modeNotes[stageMode][stageIndex] || data.text;
+      stageChips.innerHTML = data.chips.map(chip => `<span class="chip">${chip}</span>`).join("");
+      stageWatch.innerHTML = data.watch.map(item => `<li>${item}</li>`).join("");
+      stageButtons.forEach(button => {
+        const n = Number(button.dataset.stage);
+        button.classList.toggle("active", n === stageIndex);
+        button.classList.toggle("done", n < stageIndex);
+      });
+      document.querySelectorAll(".component-button.stage-active").forEach(el => el.classList.remove("stage-active"));
+      const stageTargets = [
+        ["scheduler", "fetcher"], ["scheduler", "decoder"],
+        ["register-file", "lsu"], ["lsu"], ["alu", "pc"], ["register-file", "pc"]
+      ][stageIndex];
+      stageTargets.forEach(key => {
+        document.querySelectorAll(`.core-canvas [data-component="${key}"]`).forEach(el => el.classList.add("stage-active"));
+      });
+    }
+
+    function stopStagePlayback() {
+      if (stageTimer) window.clearInterval(stageTimer);
+      stageTimer = null;
+      stagePlay.textContent = "▶ Auto-play";
+    }
+
+    stageButtons.forEach(button => button.addEventListener("click", () => {
+      stopStagePlayback();
+      setStage(Number(button.dataset.stage));
+    }));
+
+    document.getElementById("stage-prev").addEventListener("click", () => {
+      stopStagePlayback();
+      setStage(stageIndex - 1);
+    });
+
+    document.getElementById("stage-next").addEventListener("click", () => {
+      stopStagePlayback();
+      setStage(stageIndex === stageData.length - 1 ? 0 : stageIndex + 1);
+    });
+
+    stagePlay.addEventListener("click", () => {
+      if (stageTimer) {
+        stopStagePlayback();
+        return;
+      }
+      setStage(0);
+      stagePlay.textContent = "❚❚ Pause";
+      stageTimer = window.setInterval(() => {
+        if (stageIndex >= stageData.length - 1) {
+          stopStagePlayback();
+          return;
+        }
+        setStage(stageIndex + 1);
+      }, 1200);
+    });
+
+    document.querySelectorAll(".mode-switch [data-mode]").forEach(button => {
+      button.addEventListener("click", () => {
+        stopStagePlayback();
+        stageMode = button.dataset.mode;
+        document.querySelectorAll(".mode-switch [data-mode]").forEach(el => el.classList.toggle("active", el === button));
+        setStage(stageIndex);
+      });
+    });
+
+    setStage(0);
+  </script>
+</body>
+</html>

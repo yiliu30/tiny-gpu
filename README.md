@@ -329,6 +329,22 @@ Below is a sample of the execution traces, showing on each cycle the execution o
 
 ![execution trace](docs/images/trace.png)
 
+### Visualizing execution traces
+
+For an interactive walkthrough of the architecture, open [docs/mental-model.html](docs/mental-model.html) directly in a browser.
+
+The textual cycle logs can also be converted into formats supported by waveform and timeline viewers:
+
+```bash
+# Open the VCD in GTKWave, Surfer, or another waveform viewer.
+python3 test/log_to_vcd.py test/logs/log_<timestamp>.txt -o test/logs/matadd.vcd
+
+# Load the JSON at https://ui.perfetto.dev/ with "Open trace file".
+python3 test/log_to_perfetto.py test/logs/log_<timestamp>.txt -o test/logs/matadd.perfetto.json
+```
+
+The converters expose core stages, instructions, LSU states, PC values, and thread registers. In the Perfetto trace, one simulated cycle is represented by one time unit.
+
 **For anyone trying to run the simulation or play with this repo, please feel free to DM me on [twitter](https://twitter.com/majmudaradam) if you run into any issues - I want you to get this running!**
 
 # Advanced Functionality

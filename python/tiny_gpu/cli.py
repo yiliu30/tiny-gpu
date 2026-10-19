@@ -24,11 +24,19 @@ FORMAT_SUFFIXES = {
 }
 
 
-def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord], int]:
+def simulate(
+    kernel: str,
+    *,
+    mode: str = "full",
+    thread_id: int | None = None,
+) -> tuple[Gpu, list[TraceRecord], int]:
     """Run one bundled kernel and return its processor, trace records, and cycle count."""
 
     full = mode == "full"
     compatibility = mode == "compatibility"
+    selected_thread_id = thread_id
+    if selected_thread_id is None and compatibility and kernel == "matmul":
+        selected_thread_id = 1
 
     if kernel == "matadd":
         gpu = Gpu()
@@ -38,6 +46,7 @@ def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord]
         records, cycles = gpu.run_until_testbench_done(
             compatibility=compatibility,
             full=full,
+            thread_id=selected_thread_id,
         )
         return gpu, records, cycles
 
@@ -49,6 +58,7 @@ def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord]
         records, cycles = gpu.run_until_testbench_done(
             compatibility=compatibility,
             full=full,
+            thread_id=selected_thread_id,
         )
         return gpu, records, cycles
 
@@ -66,6 +76,7 @@ def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord]
                     cycle,
                     compatibility=compatibility,
                     full=full,
+                    thread_id=selected_thread_id,
                 )
             )
             gpu.evaluate_clocked()
@@ -98,9 +109,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="output path (default: <kernel>-<mode> with the format suffix)",
     )
+    parser.add_argument(
+        "--thread-id",
+        type=int,
+        help="capture only this global thread; mode still selects the trace fields",
+    )
     args = parser.parse_args(argv)
 
-    gpu, records, cycles = simulate(args.kernel, mode=args.mode)
+    gpu, records, cycles = simulate(
+        args.kernel,
+        mode=args.mode,
+        thread_id=args.thread_id,
+    )
     output = args.output or Path(
         f"{args.kernel}-{args.mode}{FORMAT_SUFFIXES[args.trace_format]}"
     )

@@ -197,6 +197,7 @@ class Gpu:
         *,
         compatibility: bool = True,
         full: bool = False,
+        thread_id: int | None = None,
     ) -> list[TraceRecord]:
         """Capture lane records for started cores before the next clock edge."""
 
@@ -211,6 +212,8 @@ class Gpu:
                     full=full,
                 )
             )
+        if thread_id is not None:
+            records = [record for record in records if record.thread_id == thread_id]
         if full and records:
             records[0].extra["arch_state"] = self.full_trace_state()
         return records
@@ -417,6 +420,7 @@ class Gpu:
         max_cycles: int = 100_000,
         compatibility: bool = True,
         full: bool = False,
+        thread_id: int | None = None,
     ) -> tuple[list[TraceRecord], int]:
         """Run through the shared harness and return flattened records plus cycle count."""
 
@@ -426,6 +430,7 @@ class Gpu:
                 cycle,
                 compatibility=compatibility,
                 full=full,
+                thread_id=thread_id,
             ),
         )
         snapshots = simulation.run_until_done(max_cycles=max_cycles)

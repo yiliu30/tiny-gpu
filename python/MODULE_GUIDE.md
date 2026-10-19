@@ -135,6 +135,10 @@ matrix addition (`matadd`), but only global thread 1 for matrix multiplication
   negative-zero-positive values for every enabled lane;
 - `arch_state` on the first record of each cycle.
 
+The CLI keeps lane selection separate from field selection. `--mode compatibility`
+chooses the compatibility fields, and `--thread-id N` chooses one global thread
+when a narrower trace is useful.
+
 `arch_state` mirrors the Verilog JSON snapshot: device control register,
 dispatcher, both controllers, program and data memory ports, fetch relays,
 load-store relays, and top-level `done`. Icarus Verilog exposes unpacked arrays

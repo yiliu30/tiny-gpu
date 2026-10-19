@@ -89,6 +89,10 @@ fields emitted by the original Verilog text logs. Compatibility mode is useful
 for checking the historical log format; full mode is better for learning and
 for complete-lane debugging.
 
+Matrix-multiplication compatibility mode captures global thread 1 by default, as
+the original Verilog log did. Use `--thread-id N` to select a different global
+thread; lane selection is independent of the field set chosen by `--mode`.
+
 ## Verified baselines
 
 The Python model matches the checked-in Verilog reference traces exactly,
@@ -199,9 +203,9 @@ Continuous integration (CI) has two workflows:
 
 - `.github/workflows/python-tests.yml` runs the fast Python suite on Python 3.10
   and 3.12 for every push and pull request.
-- `.github/workflows/rtl-differential.yml` runs the Verilog differential test on
-  a schedule or by manual dispatch, because installing and running the Verilog
-  tools takes longer.
+- `.github/workflows/rtl-differential.yml` runs the Verilog differential test for
+  pull requests that change `src/**`, `test/**`, `python/**`, `Makefile`, or the
+  workflow itself, and also on a schedule or by manual dispatch.
 
 ## Scope
 

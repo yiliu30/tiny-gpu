@@ -1,6 +1,6 @@
 # tiny-gpu Python model
 
-This package contains the first two stages of a Python model for tiny-gpu. It
+This package contains the first three stages of a Python model for tiny-gpu. It
 provides a readable bridge to the Verilog register-transfer-level (RTL)
 hardware model. Each Python module mirrors one hardware source file where that
 module exists, so the two implementations can be read side by side.
@@ -33,16 +33,33 @@ Stage B adds the shared control path for one compute core:
 - `core.py`: joins the shared decoder, scheduler, and fetcher with one
   arithmetic-logic unit, register file, program counter, and load-store stub per
   lane. A lane is one parallel thread position within a block.
-- `stubs.py`: the temporary load-store placeholder used until the memory path
-  is added in Stage C. It raises `NotImplementedError` for `LDR` and `STR`
-  instead of silently returning zero load data.
 - `kernels.py`: binary instruction images for the bundled matrix-addition and
   matrix-multiplication examples.
 
+During Stage B, a temporary load-store placeholder rejected `LDR` and `STR`
+instead of silently returning zero load data. Stage C replaces it with the real
+load-store unit described below.
+
+Stage C adds the data-memory path and shared arbitration:
+
+- `lsu.py`: one load-store unit (LSU) per lane. A load reads a data-memory value;
+  a store writes one. The unit requests access, waits for the response, holds
+  the returned value, and then returns to idle.
+- `controller.py`: a shared memory controller. A **consumer** is a unit that
+  requests memory access, and a **channel** is one external memory connection.
+  The controller gives each active consumer sole ownership of a channel until
+  its request is acknowledged and released, so two lanes cannot use the same
+  channel at once.
+
+`tests/two_core_harness.py` is Stage-C-only test scaffolding. It exists to
+validate the controller wiring before the real block dispatcher and top-level
+graphics processing unit arrive in Stage D.
+
 The model now executes the shared instruction path for single instruction,
-multiple data (SIMD) lanes, but it does not yet service data-memory reads or
-writes. Later stages add memory arbitration, block dispatch, and the top-level
-graphics processing unit (GPU).
+multiple data (SIMD) lanes and services both data-memory loads and stores. It
+still uses a small test-only two-core harness rather than a complete
+graphics-processing-unit (GPU) wrapper. Later stages add the real block
+dispatcher and top-level GPU.
 
 ## Pinned comparison semantics
 
@@ -69,7 +86,7 @@ python -m pytest -q
 ```
 
 The trace fixture and normalization tools in `test/` let the Python model be
-checked against logs produced by the Verilog design. Stage B compares the
-matrix-addition trace through the first `LDR` request, then verifies that the
-temporary load-store unit rejects that request explicitly. Open a module beside
-its same-named file in `src/` to follow the hardware-to-Python mapping.
+checked against logs produced by the Verilog design. Stage C compares all 178
+cycles and checks that the result stored in data memory is
+`[0, 2, 4, 6, 8, 10, 12, 14]`. Open a module beside its same-named file in
+`src/` to follow the hardware-to-Python mapping.

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Convert a tiny-gpu textual cycle trace into a VCD waveform."""
+"""Convert a tiny-gpu textual cycle trace into a Value Change Dump waveform."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,7 @@ class ThreadSnapshot:
     alu_out: Optional[int] = None
     lsu_out: Optional[int] = None
     constant: Optional[int] = None
+    nzp: Optional[int] = None
 
 
 @dataclass
@@ -57,6 +59,7 @@ class CycleSnapshot:
 
     index: int
     cores: dict[int, CoreSnapshot] = field(default_factory=dict)
+    arch_state: Optional[dict[str, object]] = None
 
 
 @dataclass
@@ -133,6 +136,16 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
         elif line.startswith("Core Done: "):
             core.done = int(line.removeprefix("Core Done: "))
             thread = None
+        elif line.startswith("Trace State: "):
+            if cycle.arch_state is not None:
+                raise ValueError(f"{path}:{line_number}: duplicate Trace State")
+            try:
+                arch_state = json.loads(line.removeprefix("Trace State: "))
+            except json.JSONDecodeError as error:
+                raise ValueError(f"{path}:{line_number}: invalid Trace State: {error}") from error
+            if not isinstance(arch_state, dict):
+                raise ValueError(f"{path}:{line_number}: Trace State must be a JSON object")
+            cycle.arch_state = arch_state
         elif thread is not None and line.startswith("LSU State: "):
             thread.lsu_state = line.removeprefix("LSU State: ")
         elif thread is not None and line.startswith("Registers: "):
@@ -152,6 +165,8 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
             thread.lsu_out = int(line.removeprefix("LSU Out: "))
         elif thread is not None and line.startswith("Constant: "):
             thread.constant = int(line.removeprefix("Constant: "))
+        elif thread is not None and line.startswith("NZP: "):
+            thread.nzp = int(line.removeprefix("NZP: "))
 
     if not cycles:
         raise ValueError(f"{path}: no cycle records found")
@@ -166,7 +181,10 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
                 raise ValueError(f"{path}: cycle {snapshot.index} has unknown fetcher state {current_core.fetcher_state!r}")
             for current_thread in current_core.threads:
                 if current_thread.lsu_state not in LSU_STATES:
-                    raise ValueError(f"{path}: cycle {snapshot.index} has unknown LSU state {current_thread.lsu_state!r}")
+                    raise ValueError(
+                        f"{path}: cycle {snapshot.index} has unknown load-store-unit "
+                        f"state {current_thread.lsu_state!r}"
+                    )
 
     return cycles
 
@@ -311,7 +329,12 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", type=Path, help="tiny-gpu cycle log to convert")
-    parser.add_argument("-o", "--output", type=Path, help="output VCD path (default: beside the log)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output Value Change Dump path (default: beside the log)",
+    )
     args = parser.parse_args()
 
     cycles = parse_log(args.log)

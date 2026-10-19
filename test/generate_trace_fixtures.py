@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic canonical trace fixtures from RTL text logs."""
+"""Generate deterministic canonical trace fixtures from Verilog text logs."""
 
 from __future__ import annotations
 
@@ -26,6 +26,15 @@ DEFAULT_OUTPUT = REPO_ROOT / "test" / "fixtures" / "traces" / "02b6c2c"
 RTL_COMMIT = "02b6c2c"
 
 
+def _manifest_path(path: Path) -> str:
+    """Return a repository-relative path for deterministic fixture metadata."""
+
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _sha256(path: Path) -> str:
     """Return the SHA-256 digest of a file."""
 
@@ -40,14 +49,15 @@ def _fixture_entry(
     *,
     source_log: Path,
     output: Path,
+    mode: str,
     description: str,
     records,
 ) -> dict[str, object]:
     """Build one manifest entry describing a generated trace fixture."""
 
     return {
-        "path": str(output.relative_to(DEFAULT_OUTPUT.parent.parent.parent.parent)),
-        "mode": "compatibility",
+        "path": _manifest_path(output),
+        "mode": mode,
         "description": description,
         "cycles": max(record.cycle for record in records) + 1,
         "records": len(records),
@@ -62,6 +72,8 @@ def generate(
     *,
     matadd_log: Path,
     matmul_log: Path,
+    matadd_full_log: Path | None = None,
+    matmul_full_log: Path | None = None,
     partial_log: Path | None = None,
     output_dir: Path = DEFAULT_OUTPUT,
 ) -> dict[str, object]:
@@ -94,10 +106,37 @@ def generate(
             "compatibility": _fixture_entry(
                 source_log=source_log,
                 output=output,
+                mode="compatibility",
                 description=description,
                 records=records,
             )
         }
+
+    for kernel, source_log, description in (
+        (
+            "matadd",
+            matadd_full_log,
+            "Full log: every enabled lane and architectural state, cycles 0-177",
+        ),
+        (
+            "matmul",
+            matmul_full_log,
+            "Full log: every enabled lane and architectural state, cycles 0-490",
+        ),
+    ):
+        if source_log is None:
+            continue
+        records = records_from_log(source_log)
+        output = output_dir / kernel / "full.jsonl"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        write_jsonl(output, records)
+        manifest["fixtures"][kernel]["full"] = _fixture_entry(
+            source_log=source_log,
+            output=output,
+            mode="full",
+            description=description,
+            records=records,
+        )
 
     if partial_log is not None:
         records = records_from_log(partial_log)
@@ -107,6 +146,7 @@ def generate(
             "compatibility": _fixture_entry(
                 source_log=partial_log,
                 output=output,
+                mode="compatibility",
                 description=(
                     "Compatibility log: bounded five-thread final block; "
                     "one active lane in the second block"
@@ -126,6 +166,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matadd-log", type=Path, required=True)
     parser.add_argument("--matmul-log", type=Path, required=True)
+    parser.add_argument("--matadd-full-log", type=Path)
+    parser.add_argument("--matmul-full-log", type=Path)
     parser.add_argument("--partial-log", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
@@ -133,16 +175,18 @@ def main() -> None:
     manifest = generate(
         matadd_log=args.matadd_log,
         matmul_log=args.matmul_log,
+        matadd_full_log=args.matadd_full_log,
+        matmul_full_log=args.matmul_full_log,
         partial_log=args.partial_log,
         output_dir=args.output_dir,
     )
     print(f"Wrote {args.output_dir / 'manifest.json'}")
     for kernel, entry in manifest["fixtures"].items():
-        compatibility = entry["compatibility"]
-        print(
-            f"  {kernel}: {compatibility['cycles']} cycles, "
-            f"{compatibility['records']} records"
-        )
+        for mode, fixture in entry.items():
+            print(
+                f"  {kernel}/{mode}: {fixture['cycles']} cycles, "
+                f"{fixture['records']} records"
+            )
 
 
 if __name__ == "__main__":

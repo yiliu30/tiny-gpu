@@ -57,6 +57,17 @@ def test_gpu_dcr_controls_block_count():
     assert gpu.dispatch.blocks_dispatched == 2
 
 
+def test_cycle_zero_is_idle_and_first_fetch_is_cycle_two():
+    gpu = Gpu()
+    gpu.load_program(MATADD_PROGRAM)
+    gpu.load_data(MATADD_INPUT)
+    gpu.boot(thread_count=8)
+    records, _ = gpu.run_until_testbench_done()
+    assert records[0].cycle == 0
+    assert all(record.core_state == "IDLE" for record in records if record.cycle == 0)
+    assert min(record.cycle for record in records if record.core_state == "FETCH") == 2
+
+
 def test_gpu_omits_unstarted_core_from_compatibility_trace():
     gpu = Gpu()
     gpu.load_program(MATADD_PROGRAM)

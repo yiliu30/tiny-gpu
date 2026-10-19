@@ -1,8 +1,12 @@
 import datetime
+import os
 
 class Logger:
     def __init__(self, level="debug"):
-        self.filename = f"test/logs/log_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt"
+        self.filename = os.environ.get(
+            "TINY_GPU_LOG_FILE",
+            f"test/logs/log_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt",
+        )
         self.level = level
 
     def debug(self, *messages):

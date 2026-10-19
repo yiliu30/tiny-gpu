@@ -1,78 +1,165 @@
 # tiny-gpu Python model
 
-This package contains the first four stages of a Python model for tiny-gpu. It
-provides a readable bridge to the Verilog register-transfer-level (RTL)
-hardware model. Each Python module mirrors one hardware source file where that
-module exists, so the two implementations can be read side by side.
+A deterministic, cycle-accurate Python model of the tiny-gpu hardware at Verilog
+commit `02b6c2c`. The model preserves the timing visible in the original
+register-transfer-level (RTL) design: the state that exists before each clock
+edge, the values evaluated at that edge, and the order in which memory and
+control changes become visible.
 
-Stage A models the small building blocks and the shared simulation machinery:
+The Python files intentionally follow the hardware module layout in `src/*.sv`,
+so the two implementations can be read side by side. See
+[MODULE_GUIDE.md](MODULE_GUIDE.md) for the detailed reading path, memory
+handshakes, arbitration rules, and preserved hardware quirks.
 
-- `alu.py`: the arithmetic-logic unit (`Alu`), which performs addition,
-  subtraction, multiplication, division, and comparison operations.
-- `decoder.py`: the instruction decoder (`Decoder`), which turns a 16-bit
-  instruction into control signals.
-- `registers.py`: one lane's register file (`RegisterFile`), including the
-  read-only block and thread identity registers and the arithmetic-logic or
-  load-store result selected for a write.
-- `pc.py`: one lane's program counter (`PcUnit`) and its negative, zero, and
-  positive (NZP) condition bits used by branch instructions.
-- `harness.py`: the ordered simulation phases that keep observations and clock
-  updates in the same order as the Verilog testbench.
-- `trace.py`: canonical trace records, deterministic JavaScript Object Notation
-  (JSON) Lines input/output (one JSON value per line), and first-difference
-  comparison.
-- `memory.py`: external memory used by the testbench.
-- `isa.py`: instruction-set architecture constants and field extraction.
+## Terms used in this guide
 
-Stage B adds the shared control path for one compute core:
+- **Register-transfer level (RTL):** hardware code that describes state
+  registers and the logic evaluated between clock edges.
+- **Module:** one Verilog file and the hardware block it describes. Each hardware
+  module has a same-named Python file when that block is modeled.
+- **Lane:** one thread position inside a compute core. This design supports four
+  parallel lanes per core.
+- **Kernel:** one program launched across a requested number of threads.
+- **Block:** a group of threads that one core executes together.
+- **Cycle-accurate:** the model reproduces the state visible in each simulated
+  clock cycle, not only the final program result.
+- **Architectural state:** the controller, dispatcher, fetch, memory, and
+  completion values that are visible outside the individual lanes.
 
-- `fetcher.py`: requests the 16-bit instruction selected by the program counter
-  and holds it until decoding begins.
-- `scheduler.py`: advances the core through fetch, decode, memory request,
-  memory wait, execute, and update states.
-- `core.py`: joins the shared decoder, scheduler, and fetcher with one
-  arithmetic-logic unit, register file, program counter, and load-store stub per
-  lane. A lane is one parallel thread position within a block.
-- `kernels.py`: binary instruction images for the bundled matrix-addition and
-  matrix-multiplication examples.
+The Python code uses descriptive instruction-field names:
 
-During Stage B, a temporary load-store placeholder rejected `LDR` and `STR`
-instead of silently returning zero load data. Stage C replaces it with the real
-load-store unit described below.
+| Verilog field | Python name | Meaning |
+| --- | --- | --- |
+| `rd` | `destination_register` | register that receives a result |
+| `rs` | `first_source_register` | register supplying the first operand |
+| `rt` | `second_source_register` | register supplying the second operand |
+| `nzp` | `branch_condition_mask` | conditions selected by `BRnzp` |
 
-Stage C adds the data-memory path and shared arbitration:
+Canonical JSON Lines traces retain the short `rd`, `rs`, `rt`, and `nzp` keys
+because those keys are part of the pinned compatibility fixture format.
+Value Change Dump and Perfetto outputs use the descriptive names.
 
-- `lsu.py`: one load-store unit (LSU) per lane. A load reads a data-memory value;
-  a store writes one. The unit requests access, waits for the response, holds
-  the returned value, and then returns to idle.
-- `controller.py`: a shared memory controller. A **consumer** is a unit that
-  requests memory access, and a **channel** is one external memory connection.
-  The controller gives each active consumer sole ownership of a channel until
-  its request is acknowledged and released, so two lanes cannot use the same
-  channel at once.
+## Hardware module layout
 
-Stage D adds the complete top-level graphics processing unit (GPU) wiring:
+| Python module | Verilog counterpart | Responsibility |
+| --- | --- | --- |
+| `tiny_gpu/gpu.py` | `src/gpu.sv` | Top-level graphics-processing-unit wiring, external memory service, and trace capture |
+| `tiny_gpu/dcr.py` | `src/dcr.sv` | Device control register storing the requested thread count |
+| `tiny_gpu/dispatch.py` | `src/dispatch.sv` | Split threads into blocks and assign blocks to available cores |
+| `tiny_gpu/core.py` | `src/core.sv` | Shared core control plus one set of lane-local execution units |
+| `tiny_gpu/scheduler.py` | `src/scheduler.sv` | Advance the core through fetch, decode, memory wait, execute, update, and completion |
+| `tiny_gpu/fetcher.py` | `src/fetcher.sv` | Request the next program-memory instruction and hold it until decoding |
+| `tiny_gpu/decoder.py` | `src/decoder.sv` | Decode a 16-bit instruction into control signals |
+| `tiny_gpu/registers.py` | `src/registers.sv` | Thirteen writable registers plus block and thread identity registers |
+| `tiny_gpu/alu.py` | `src/alu.sv` | Arithmetic-logic unit (`Alu`) for add, subtract, multiply, divide, and compare operations |
+| `tiny_gpu/lsu.py` | `src/lsu.sv` | Load-store unit (`Lsu`) for data-memory read and write handshakes |
+| `tiny_gpu/pc.py` | `src/pc.sv` | Per-lane program counter (`PcUnit`) and negative, zero, positive (NZP) condition bits |
+| `tiny_gpu/controller.py` | `src/controller.sv` | Arbitrate several memory consumers onto a limited number of external channels |
 
-- `dcr.py`: the device control register (`Dcr`). This register stores the total
-  number of threads that the next kernel should launch.
-- `dispatch.py`: the block dispatcher (`Dispatch`). A **thread** is one parallel
-  execution position, and a **block** is a group of threads that one core runs
-  together. The dispatcher assigns each block to an available core and reports
-  completion when all blocks finish.
-- `gpu.py`: the complete `Gpu` wrapper. It connects the device control register,
-  dispatcher, compute cores, program-memory controller, data-memory controller,
-  and external memories.
+Support modules are not hardware blocks:
 
-The model now runs full kernels through the same launch sequence as the Verilog
-testbench: reset, write the thread count, assert start, run until the dispatcher
-reports completion, and capture pre-edge trace records. It reproduces all 178
-matrix-addition cycles and all 491 compatibility-filtered matrix-multiplication
-cycles. Later Stage E adds complete-lane traces and command-line export tools.
+- `isa.py` contains instruction-set architecture constants, opcode names, and
+  instruction-field extraction.
+- `memory.py` provides external program and data memory for the testbench.
+- `trace.py` defines canonical records, deterministic JavaScript Object Notation
+  (JSON) Lines input and output, and first-difference comparison.
+- `exporters.py` writes waveform and timeline trace formats.
+- `kernels.py` contains machine-code images for the bundled examples.
+- `cli.py` provides the command-line interface (CLI).
+- `harness.py` defines the explicit simulation phase order.
+
+## Quick start
+
+The package requires Python 3.10 or newer and has no runtime dependencies.
+
+```bash
+cd python
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[test]'
+python -m pytest -q
+```
+
+Run a bundled kernel and write a trace:
+
+```bash
+# JSON Lines: one JavaScript Object Notation object per line.
+tiny-gpu-trace matadd --format jsonl -o matadd.jsonl
+
+# Value Change Dump waveform for GTKWave, Surfer, or another waveform viewer.
+tiny-gpu-trace matadd --format vcd -o matadd.vcd
+
+# Timeline file to open at https://ui.perfetto.dev/.
+tiny-gpu-trace matmul --format perfetto -o matmul.perfetto.json
+```
+
+The bundled kernels are matrix addition (`matadd`), matrix multiplication
+(`matmul`), and a short partial-final-block example (`partial`).
+
+The default `--mode full` captures every enabled lane and one complete
+architectural snapshot per cycle. `--mode compatibility` reproduces only the
+fields emitted by the original Verilog text logs. Compatibility mode is useful
+for checking the historical log format; full mode is better for learning and
+for complete-lane debugging.
+
+Matrix-multiplication compatibility mode captures global thread 1 by default, as
+the original Verilog log did. Use `--thread-id N` to select a different global
+thread; lane selection is independent of the field set chosen by `--mode`.
+
+## Verified baselines
+
+The Python model matches the checked-in Verilog reference traces exactly,
+including the first and last observed cycles.
+
+| Kernel | Mode | Cycles | Records | Lanes | Result |
+| --- | --- | ---: | ---: | --- | --- |
+| Matrix addition (`matadd`) | compatibility | 178 | 1,424 | 4 lanes across 2 cores | `[0, 2, 4, 6, 8, 10, 12, 14]` |
+| Matrix addition (`matadd`) | full | 178 | 1,424 | 4 lanes across 2 cores | same |
+| Matrix multiplication (`matmul`) | compatibility | 491 | 491 | global thread 1 | `[7, 10, 15, 22]` |
+| Matrix multiplication (`matmul`) | full | 491 | 1,964 | 4 lanes on 1 core | same |
+| Partial final block (`partial`) | compatibility | 60 | 303 | 5 threads across 2 cores | stale-program-counter behavior preserved |
+
+Full records add arithmetic-logic-unit output, load-store-unit output, constant,
+and negative-zero-positive condition values for every enabled lane. The first
+record of each cycle also carries one `arch_state` architectural snapshot.
+
+## Trace formats
+
+- JSON Lines is the canonical format used by the Python comparator. Each line is
+  one independent JSON record.
+- Value Change Dump is a standard waveform format. It contains core stages,
+  fetch and instruction signals, the program counter, load-store state,
+  registers, arithmetic and memory outputs, condition bits, and flattened
+  architectural state.
+- Perfetto uses a browser timeline. It contains one core-stage track and one
+  track per enabled lane. Full matrix addition has 10 tracks; full matrix
+  multiplication has 5. One simulated cycle is represented as 1 microsecond.
+
+The canonical writers consume Python `TraceRecord` objects directly. They do not
+parse the older Verilog text logs.
+
+## Simulation order
+
+Each simulated cycle follows the same five phases as the Verilog testbench:
+
+1. Return responses for external program and data memory requests captured at
+   the preceding clock edge. Writes become visible during this phase.
+2. Let combinational values settle.
+3. Capture the trace state visible before the next clock edge.
+4. Evaluate every clocked module while all modules still see the old state.
+5. Publish all staged updates together, matching Verilog nonblocking
+   assignments. A nonblocking assignment computes a new value now but makes it
+   visible at the clock edge.
+
+The Verilog testbench checks the top-level `done` signal before the current edge
+commits. The Python runner therefore captures one final trailing cycle. Do not
+replace this with a conventional `while not done` loop, because that would drop
+the last cycle visible in the reference trace.
 
 `Gpu.run_until_testbench_done()` delegates to the shared `SimulationHarness`.
-`Gpu` also validates the pinned compatibility profile at construction time and
-rejects unsupported address widths, data widths, channel counts, core counts,
-and lanes per core instead of producing a misleading trace.
+`Gpu` validates the pinned compatibility profile at construction and rejects
+unsupported address widths, data widths, channel counts, core counts, and lanes
+per core before simulation starts.
 
 ## Pinned comparison semantics
 
@@ -83,25 +170,63 @@ comparison against older logs that captured fewer values. Use
 as a divergence.
 
 The arithmetic-logic unit reproduces the pinned RTL comparison behavior. It
-wraps `rs - rt` to eight bits and compares that unsigned result with zero. A
-nonzero wrapped result sets the positive bit, including for a mathematical
-negative difference, so the negative bit is never set. This deliberately
-preserves the behavior of the reference RTL instead of correcting it.
+wraps the first source value minus the second source value to eight bits and
+compares that unsigned result with zero. A nonzero wrapped result sets the
+positive bit, including for a mathematical negative difference, so the negative
+bit is never set. This deliberately preserves the reference RTL instead of
+correcting it.
 
-Run the fast, simulator-independent tests with:
+## Verification
+
+The checked-in reference traces are called fixtures. They live in
+`test/fixtures/traces/02b6c2c/` and include record counts, lane lists, SHA-256
+integrity hashes, and source-log provenance.
+
+Two kinds of verification are used:
+
+- The fast Python test suite compares the model against the fixtures and checks
+  module behavior without requiring a Verilog simulator.
+- A differential test runs the Verilog design, regenerates the traces, and fails
+  if any normalized fixture or Python result differs.
+
+To regenerate fixtures from Verilog logs:
 
 ```bash
-cd python
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[test]'
-python -m pytest -q
+mkdir -p build
+TINY_GPU_LOG_FILE=test/logs/matadd_compatibility.txt make test_matadd
+TINY_GPU_LOG_FILE=test/logs/matmul_compatibility.txt make test_matmul
+TINY_GPU_LOG_FILE=test/logs/partial_compatibility.txt make test_partial_block
+TINY_GPU_FULL_TRACE=1 TINY_GPU_LOG_FILE=test/logs/matadd_full.txt make test_matadd
+TINY_GPU_FULL_TRACE=1 TINY_GPU_LOG_FILE=test/logs/matmul_full.txt make test_matmul
+
+python3 test/generate_trace_fixtures.py \
+  --matadd-log test/logs/matadd_compatibility.txt \
+  --matmul-log test/logs/matmul_compatibility.txt \
+  --matadd-full-log test/logs/matadd_full.txt \
+  --matmul-full-log test/logs/matmul_full.txt \
+  --partial-log test/logs/partial_compatibility.txt
 ```
 
-The trace fixture and normalization tools in `test/` let the Python model be
-checked against logs produced by the Verilog design. Stage C compares all 178
-cycles and checks that the result stored in data memory is
-`[0, 2, 4, 6, 8, 10, 12, 14]`. Stage D adds the top-level GPU and checks the
-491-cycle, single-thread matrix-multiplication compatibility trace with the
-result `[7, 10, 15, 22]`. Open a module beside its same-named file in `src/` to
-follow the hardware-to-Python mapping.
+Verilog logs are intentionally ignored by version control; normalized fixtures
+are committed. `test/run_rtl_differential.sh` runs the complete regeneration and
+comparison. The full differential workflow requires Icarus Verilog, the `sv2v`
+SystemVerilog-to-Verilog converter, and the `cocotb` Python verification
+library.
+
+Continuous integration (CI) has two workflows:
+
+- `.github/workflows/python-tests.yml` runs the fast Python suite on Python 3.10
+  and 3.12 for every push and pull request.
+- `.github/workflows/rtl-differential.yml` runs the Verilog differential test for
+  pull requests that change `src/**`, `test/**`, `python/**`, `Makefile`, or the
+  workflow itself, and also on a schedule or by manual dispatch.
+
+## Scope
+
+This is an executable architectural model, not synthesizable RTL. It preserves
+the pinned two-core, four-lanes-per-core compatibility profile and does not add
+caches, pipelining, branch divergence, or general handling of unknown values.
+Branch divergence means threads taking different future instruction paths. The
+only explicit unknown values are the top-level relay outputs that are still
+unknown (`X`) in cycle 0 of the Verilog trace; Python represents them as `null`
+and then makes them known on the launch edge.

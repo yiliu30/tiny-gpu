@@ -27,8 +27,8 @@ def record(cycle=0, core=0, lane=0, pc=0, registers=None):
         done=0,
         lsu_state="IDLE",
         registers=registers or {"R0": 0},
-        rs=0,
-        rt=0,
+        first_source_value=0,
+        second_source_value=0,
         alu_out=0,
     )
 

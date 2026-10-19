@@ -1,0 +1,48 @@
+name: Verilog differential regression
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "test/**"
+      - "python/**"
+      - "Makefile"
+      - ".github/workflows/rtl-differential.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+jobs:
+  rtl-parity:
+    runs-on: ubuntu-24.04
+    env:
+      COCOTB_VERSION: "1.9.2"
+      IVERILOG_VERSION: "12.0-2build2"
+      PYTEST_VERSION: "8.3.5"
+      SV2V_VERSION: "0.0.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned Verilog register-transfer-level tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            "iverilog=${IVERILOG_VERSION}" make unzip
+          python -m pip install "cocotb==${COCOTB_VERSION}" "pytest==${PYTEST_VERSION}"
+          curl -fsSL \
+            "https://github.com/zachjs/sv2v/releases/download/v${SV2V_VERSION}/sv2v-Linux.zip" \
+            -o "$RUNNER_TEMP/sv2v.zip"
+          unzip -q "$RUNNER_TEMP/sv2v.zip" -d "$RUNNER_TEMP/sv2v"
+          echo "$RUNNER_TEMP/sv2v/sv2v-Linux" >> "$GITHUB_PATH"
+
+      - name: Run Verilog/Python differential regression
+        run: |
+          iverilog -V 2>&1 | head -n 1
+          sv2v --version
+          test/run_rtl_differential.sh

@@ -54,10 +54,10 @@ def _run_core_program(core, program, *, max_cycles=100):
     for _ in range(max_cycles):
         core.program_mem_read_ready = 1
         core.program_mem_read_data = program[core.program_mem_read_address]
-        before = (core.current_pc, core.core_state, core.pcs[0].nzp)
+        before = (core.current_pc, core.core_state, core.pcs[0].condition_flags)
         core.evaluate_clocked()
         core.commit()
-        after = (core.current_pc, core.core_state, core.pcs[0].nzp)
+        after = (core.current_pc, core.core_state, core.pcs[0].condition_flags)
         snapshots.append((before, after))
         if core.done:
             return snapshots
@@ -71,7 +71,7 @@ def _run_core_program(core, program, *, max_cycles=100):
         (0b001, 4, [0, 1, 2, 3, 4, 5, 7], 9),
     ],
 )
-def test_core_cmp_branch_updates_nzp_before_selecting_pc(
+def test_core_cmp_branch_updates_condition_flags_before_selecting_pc(
     branch_mask,
     expected_after_branch_pc,
     expected_pc_path,

@@ -11,8 +11,8 @@ from . import isa
 class RegisterFileOutputs:
     """Register operands and the complete register values after evaluation."""
 
-    rs: int
-    rt: int
+    first_source_value: int
+    second_source_value: int
     values: tuple[int, ...]
 
 
@@ -24,8 +24,8 @@ class RegisterFile:
 
         self.threads_per_block = threads_per_block
         self.thread_id = thread_id
-        self.rs = 0
-        self.rt = 0
+        self.first_source_value = 0
+        self.second_source_value = 0
         self.values = list(self._reset_values())
 
     def _reset_values(self) -> tuple[int, ...]:
@@ -43,11 +43,11 @@ class RegisterFile:
         enable: bool,
         block_id: int,
         core_state: int,
-        reg_write_enable: int,
-        reg_input_mux: int,
-        rd_address: int,
-        rs_address: int,
-        rt_address: int,
+        register_write_enable: int,
+        register_input_mux: int,
+        destination_register_address: int,
+        first_source_register_address: int,
+        second_source_register_address: int,
         immediate: int,
         alu_out: int,
         lsu_out: int,
@@ -55,33 +55,49 @@ class RegisterFile:
         """Return read operands and the next register image without committing it."""
 
         if reset:
-            return RegisterFileOutputs(rs=0, rt=0, values=self._reset_values())
+            return RegisterFileOutputs(
+                first_source_value=0,
+                second_source_value=0,
+                values=self._reset_values(),
+            )
 
-        rs = self.rs
-        rt = self.rt
+        first_source_value = self.first_source_value
+        second_source_value = self.second_source_value
         values = list(self.values)
         if not enable:
-            return RegisterFileOutputs(rs=rs, rt=rt, values=tuple(values))
+            return RegisterFileOutputs(
+                first_source_value=first_source_value,
+                second_source_value=second_source_value,
+                values=tuple(values),
+            )
 
         values[13] = block_id & 0xFF
         if core_state == isa.CORE_REQUEST:
-            rs = self.values[rs_address]
-            rt = self.values[rt_address]
+            first_source_value = self.values[first_source_register_address]
+            second_source_value = self.values[second_source_register_address]
 
-        if core_state == isa.CORE_UPDATE and reg_write_enable and rd_address < 13:
-            if reg_input_mux == isa.REG_ARITHMETIC:
-                values[rd_address] = alu_out & 0xFF
-            elif reg_input_mux == isa.REG_MEMORY:
-                values[rd_address] = lsu_out & 0xFF
-            elif reg_input_mux == isa.REG_CONSTANT:
-                values[rd_address] = immediate & 0xFF
+        if (
+            core_state == isa.CORE_UPDATE
+            and register_write_enable
+            and destination_register_address < 13
+        ):
+            if register_input_mux == isa.REG_ARITHMETIC:
+                values[destination_register_address] = alu_out & 0xFF
+            elif register_input_mux == isa.REG_MEMORY:
+                values[destination_register_address] = lsu_out & 0xFF
+            elif register_input_mux == isa.REG_CONSTANT:
+                values[destination_register_address] = immediate & 0xFF
 
-        return RegisterFileOutputs(rs=rs, rt=rt, values=tuple(values))
+        return RegisterFileOutputs(
+            first_source_value=first_source_value,
+            second_source_value=second_source_value,
+            values=tuple(values),
+        )
 
     def clock(self, **kwargs: int | bool) -> None:
         """Commit evaluated operands and register values at a simulated clock edge."""
 
         outputs = self.evaluate(**kwargs)
-        self.rs = outputs.rs
-        self.rt = outputs.rt
+        self.first_source_value = outputs.first_source_value
+        self.second_source_value = outputs.second_source_value
         self.values = list(outputs.values)

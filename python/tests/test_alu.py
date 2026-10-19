@@ -5,7 +5,7 @@ from tiny_gpu.alu import Alu
 
 
 @pytest.mark.parametrize(
-    ("mux", "rs", "rt", "expected"),
+    ("mux", "first_operand_value", "second_operand_value", "expected"),
     [
         (isa.ALU_ADD, 2, 3, 5),
         (isa.ALU_SUB, 2, 3, 255),
@@ -13,7 +13,9 @@ from tiny_gpu.alu import Alu
         (isa.ALU_DIV, 20, 3, 6),
     ],
 )
-def test_arithmetic_and_wrap(mux, rs, rt, expected):
+def test_arithmetic_and_wrap(
+    mux, first_operand_value, second_operand_value, expected
+):
     alu = Alu()
     actual = alu.evaluate(
         reset=False,
@@ -21,14 +23,14 @@ def test_arithmetic_and_wrap(mux, rs, rt, expected):
         core_state=isa.CORE_EXECUTE,
         arithmetic_mux=mux,
         output_mux=0,
-        rs=rs,
-        rt=rt,
+        first_operand_value=first_operand_value,
+        second_operand_value=second_operand_value,
     )
     assert actual == expected
 
 
 @pytest.mark.parametrize(
-    ("rs", "rt", "expected"),
+    ("first_operand_value", "second_operand_value", "expected"),
     [
         (5, 3, 0b100),
         (5, 5, 0b010),
@@ -42,7 +44,9 @@ def test_arithmetic_and_wrap(mux, rs, rt, expected):
         (255, 0, 0b100),
     ],
 )
-def test_cmp_uses_pinned_wrapping_unsigned_difference(rs, rt, expected):
+def test_cmp_uses_pinned_wrapping_unsigned_difference(
+    first_operand_value, second_operand_value, expected
+):
     alu = Alu()
     assert (
         alu.evaluate(
@@ -51,8 +55,8 @@ def test_cmp_uses_pinned_wrapping_unsigned_difference(rs, rt, expected):
             core_state=isa.CORE_EXECUTE,
             arithmetic_mux=0,
             output_mux=1,
-            rs=rs,
-            rt=rt,
+            first_operand_value=first_operand_value,
+            second_operand_value=second_operand_value,
         )
         == expected
     )
@@ -66,8 +70,8 @@ def test_cmp_does_not_set_negative_for_wrapped_nonzero_difference():
         core_state=isa.CORE_EXECUTE,
         arithmetic_mux=0,
         output_mux=1,
-        rs=0,
-        rt=1,
+        first_operand_value=0,
+        second_operand_value=1,
     )
 
     assert result == 0b100
@@ -82,8 +86,8 @@ def test_output_only_changes_in_execute_and_enabled_lane():
         core_state=isa.CORE_EXECUTE,
         arithmetic_mux=isa.ALU_ADD,
         output_mux=0,
-        rs=4,
-        rt=5,
+        first_operand_value=4,
+        second_operand_value=5,
     )
     assert alu.alu_out == 9
     alu.clock(
@@ -92,8 +96,8 @@ def test_output_only_changes_in_execute_and_enabled_lane():
         core_state=isa.CORE_EXECUTE,
         arithmetic_mux=isa.ALU_ADD,
         output_mux=0,
-        rs=100,
-        rt=100,
+        first_operand_value=100,
+        second_operand_value=100,
     )
     assert alu.alu_out == 9
 
@@ -107,7 +111,7 @@ def test_reset_clears_output():
         core_state=isa.CORE_EXECUTE,
         arithmetic_mux=isa.ALU_ADD,
         output_mux=0,
-        rs=1,
-        rt=1,
+        first_operand_value=1,
+        second_operand_value=1,
     )
     assert alu.alu_out == 0

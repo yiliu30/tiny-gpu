@@ -19,6 +19,7 @@ Built with <15 files of fully documented Verilog, complete documentation on arch
   - [Matrix Addition](#matrix-addition)
   - [Matrix Multiplication](/tree/master?tab=readme-ov-file#matrix-multiplication)
 - [Simulation](#simulation)
+- [Python cycle-accurate model](#python-cycle-accurate-model)
 - [Advanced Functionality](#advanced-functionality)
 - [Next Steps](#next-steps)
 
@@ -158,7 +159,7 @@ Importantly, each register file contains a few read-only registers holding data 
 
 Dedicated arithmetic-logic unit for each thread to perform computations. Handles the `ADD`, `SUB`, `MUL`, `DIV` arithmetic instructions.
 
-Also handles the `CMP` comparison instruction which actually outputs whether the result of the difference between two registers is negative, zero or positive - and stores the result in the `NZP` register in the PC unit.
+Also handles the `CMP` comparison instruction, which outputs whether the difference between two registers is negative, zero, or positive and stores that result in the negative-zero-positive (`NZP`) condition register in the PC unit.
 
 ### LSUs
 
@@ -186,8 +187,8 @@ tiny-gpu implements a simple 11 instruction ISA built to enable simple kernels f
 
 For these purposes, it supports the following instructions:
 
-- `BRnzp` - Branch instruction to jump to another line of program memory if the NZP register matches the `nzp` condition in the instruction.
-- `CMP` - Compare the value of two registers and store the result in the NZP register to use for a later `BRnzp` instruction.
+- `BRnzp` (branch if negative, zero, or positive) - Jump to another line of program memory if the condition flags match the branch mask in the instruction.
+- `CMP` - Compare the value of two registers and store the condition result for a later `BRnzp` instruction.
 - `ADD`, `SUB`, `MUL`, `DIV` - Basic arithmetic operations to enable tensor math.
 - `LDR` - Load data from global memory.
 - `STR` - Store data into global memory.
@@ -336,14 +337,43 @@ For an interactive walkthrough of the architecture, open [docs/mental-model.html
 The textual cycle logs can also be converted into formats supported by waveform and timeline viewers:
 
 ```bash
-# Open the VCD in GTKWave, Surfer, or another waveform viewer.
+# Open the Value Change Dump (VCD) file in GTKWave, Surfer, or another waveform viewer.
 python3 test/log_to_vcd.py test/logs/log_<timestamp>.txt -o test/logs/matadd.vcd
 
 # Load the JSON at https://ui.perfetto.dev/ with "Open trace file".
 python3 test/log_to_perfetto.py test/logs/log_<timestamp>.txt -o test/logs/matadd.perfetto.json
 ```
 
-The converters expose core stages, instructions, LSU states, PC values, and thread registers. In the Perfetto trace, one simulated cycle is represented by one time unit.
+The converters expose core stages, instructions, load-store unit (LSU) states,
+program-counter (PC) values, and thread registers. In the Perfetto trace, one
+simulated cycle is represented by one time unit.
+
+### Python cycle-accurate model
+
+The `python/` package provides a simulator-independent Python model of the
+Verilog register-transfer-level (RTL) hardware. It is a learning bridge: each
+hardware module has a same-named Python file, and every simulated clock cycle
+can be inspected or compared against the pinned Verilog traces. A lane is one
+parallel thread position inside a compute core; this design has four lanes per
+core.
+
+```bash
+cd python
+python3 -m pip install -e '.[test]'
+python -m pytest -q
+
+tiny-gpu-trace matadd --format vcd -o matadd.vcd
+tiny-gpu-trace matmul --format perfetto -o matmul.perfetto.json
+```
+
+The model reproduces the matrix-addition (`matadd`) and matrix-multiplication
+(`matmul`) results and exact traces for every enabled lane: 178 cycles and
+1,424 records for matrix addition, and 491 cycles and 1,964 records for matrix
+multiplication. The generated files come directly from canonical Python trace
+records rather than from text-log parsing. See
+[python/MODULE_GUIDE.md](python/MODULE_GUIDE.md) for the RTL-to-Python module
+map, observation phases, controller arbitration, memory relay timing, and
+preserved partial-block quirk.
 
 **For anyone trying to run the simulation or play with this repo, please feel free to DM me on [twitter](https://twitter.com/majmudaradam) if you run into any issues - I want you to get this running!**
 

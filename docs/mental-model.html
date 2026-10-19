@@ -955,15 +955,15 @@
               <thead><tr><th>Instruction</th><th>Opcode</th><th>Effect</th><th>Main units</th></tr></thead>
               <tbody>
                 <tr><td>NOP</td><td>0000</td><td>Do nothing; advance PC.</td><td>scheduler, PC</td></tr>
-                <tr><td>BRnzp</td><td>0001</td><td>Branch to immediate when NZP matches selected n/z/p bits.</td><td>PC + NZP</td></tr>
-                <tr><td>CMP</td><td>0010</td><td>Compute sign/zero of <code>rs − rt</code>; write NZP.</td><td>ALU, PC</td></tr>
-                <tr><td>ADD</td><td>0011</td><td><code>rd = rs + rt</code></td><td>ALU</td></tr>
-                <tr><td>SUB</td><td>0100</td><td><code>rd = rs − rt</code></td><td>ALU</td></tr>
-                <tr><td>MUL</td><td>0101</td><td><code>rd = rs × rt</code></td><td>ALU</td></tr>
-                <tr><td>DIV</td><td>0110</td><td><code>rd = rs ÷ rt</code></td><td>ALU</td></tr>
-                <tr><td>LDR</td><td>0111</td><td><code>rd = data_mem[rs]</code></td><td>LSU + controller</td></tr>
-                <tr><td>STR</td><td>1000</td><td><code>data_mem[rs] = rt</code></td><td>LSU + controller</td></tr>
-                <tr><td>CONST</td><td>1001</td><td><code>rd = immediate[7:0]</code></td><td>decoder, registers</td></tr>
+                <tr><td>BRnzp<br><small>Branch if negative, zero, or positive</small></td><td>0001</td><td>Branch to immediate when the saved condition flags match the instruction mask.</td><td>PC + condition flags</td></tr>
+                <tr><td>CMP</td><td>0010</td><td>Compare the first source value with the second source value; write the condition flags.</td><td>ALU, PC</td></tr>
+                <tr><td>ADD</td><td>0011</td><td><code>destination = first source + second source</code></td><td>ALU</td></tr>
+                <tr><td>SUB</td><td>0100</td><td><code>destination = first source − second source</code></td><td>ALU</td></tr>
+                <tr><td>MUL</td><td>0101</td><td><code>destination = first source × second source</code></td><td>ALU</td></tr>
+                <tr><td>DIV</td><td>0110</td><td><code>destination = first source ÷ second source</code></td><td>ALU</td></tr>
+                <tr><td>LDR</td><td>0111</td><td><code>destination = data_mem[first source]</code></td><td>LSU + controller</td></tr>
+                <tr><td>STR</td><td>1000</td><td><code>data_mem[first source] = second source</code></td><td>LSU + controller</td></tr>
+                <tr><td>CONST</td><td>1001</td><td><code>destination = immediate[7:0]</code></td><td>decoder, registers</td></tr>
                 <tr><td>RET</td><td>1111</td><td>Mark the block complete.</td><td>scheduler, dispatcher</td></tr>
               </tbody>
             </table>
@@ -974,9 +974,9 @@
             <p style="color:var(--muted);margin:0;font-size:13px">The decoder slices fixed bit ranges. Some opcodes reinterpret the middle bits as an immediate or branch mask.</p>
             <div class="bit-word" aria-label="Instruction bit fields">
               <div><strong>[15:12]</strong>opcode</div>
-              <div><strong>[11:8]</strong>rd / NZP</div>
-              <div><strong>[7:4]</strong>rs</div>
-              <div><strong>[3:0]</strong>rt</div>
+              <div><strong>[11:8]</strong>destination register / branch mask</div>
+              <div><strong>[7:4]</strong>first source register</div>
+              <div><strong>[3:0]</strong>second source register</div>
             </div>
             <p class="table-note">CONST and BRnzp use <code>instruction[7:0]</code> as an 8-bit immediate.</p>
             <div class="register-list">
@@ -1111,7 +1111,7 @@
         tag: "Core control",
         title: "Decoder",
         summary: "Converts the 16-bit instruction into register addresses and control signals.",
-        details: ["Extracts rd, rs, rt, immediate, and nzp fields.", "Generates register-write, memory-read/write, ALU, branch, and RET controls.", "The same decoded bundle drives every active lane."],
+        details: ["Extracts destination-register, first-source-register, second-source-register, immediate, and branch-condition-mask fields.", "Generates register-write, memory-read/write, ALU, branch, and RET controls.", "The same decoded bundle drives every active lane."],
         remember: "Broadcast control plus private data is the heart of the SIMD execution model.",
         source: "src/decoder.sv"
       },
@@ -1119,7 +1119,7 @@
         tag: "Per lane",
         title: "Register file",
         summary: "A private 16 × 8-bit state block for one hardware thread.",
-        details: ["R0–R12 are general-purpose and writable.", "R13 = %blockIdx, R14 = %blockDim, R15 = %threadIdx.", "Reads rs/rt in REQUEST; writes rd in UPDATE."],
+        details: ["R0–R12 are general-purpose and writable.", "R13 = %blockIdx, R14 = %blockDim, R15 = %threadIdx.", "Reads the first and second source values in REQUEST; writes the destination register in UPDATE."],
         remember: "The special registers are what turn the same kernel code into different per-thread addresses.",
         source: "src/registers.sv"
       },
@@ -1135,15 +1135,15 @@
         tag: "Per lane",
         title: "Load-store unit",
         summary: "Runs the asynchronous valid/ready protocol for one lane's data-memory access.",
-        details: ["States: IDLE → REQUESTING → WAITING → DONE.", "LDR sends mem_read_valid and captures mem_read_data.", "STR sends mem_write_valid with rs as address and rt as data."],
+        details: ["States: IDLE → REQUESTING → WAITING → DONE.", "LDR sends mem_read_valid and captures mem_read_data.", "STR sends mem_write_valid with the first source as address and the second source as data."],
         remember: "A memory instruction makes the whole core wait until every enabled lane's LSU is done.",
         source: "src/lsu.sv"
       },
       pc: {
         tag: "Per lane",
-        title: "Program counter + NZP",
+        title: "Program counter + condition flags",
         summary: "Computes the next instruction address and retains condition state for branches.",
-        details: ["Normally next_pc = current_pc + 1.", "BRnzp may select decoded_immediate when NZP matches.", "CMP updates NZP during UPDATE."],
+        details: ["Normally next_pc = current_pc + 1.", "BRnzp may select decoded_immediate when the condition mask matches.", "CMP updates the condition flags during UPDATE."],
         remember: "Every lane computes next_pc, but the scheduler advances the block using the last lane's result—an explicit convergence assumption.",
         source: "src/pc.sv · src/scheduler.sv"
       }
@@ -1286,15 +1286,15 @@
       },
       {
         title: "DECODE",
-        text: "The decoder slices the instruction into rd/rs/rt/immediate/NZP fields and asserts the control signals for this opcode. One decoded bundle is broadcast to all active lanes.",
+        text: "The decoder slices the instruction into destination-register, first-source-register, second-source-register, immediate, and branch-condition-mask fields and asserts the control signals for this opcode. One decoded bundle is broadcast to all active lanes.",
         chips: ["core_state = 010", "register addresses", "write / memory / mux enables"],
         watch: ["Control signals reset every decode before the opcode sets them.", "The decoder does not know lane values.", "RET and BRnzp set control signals rather than doing the work directly."]
       },
       {
         title: "REQUEST",
-        text: "Each lane's register file reads rs and rt. If the instruction is LDR or STR, every enabled LSU starts its asynchronous memory request.",
-        chips: ["core_state = 011", "registers → rs / rt", "LSU: IDLE → REQUESTING"],
-        watch: ["The address for LDR/STR is rs.", "For STR, rt is the data to write.", "All active lanes make their requests in parallel, then contend at the controller."]
+        text: "Each lane's register file reads its first and second source values. If the instruction is LDR or STR, every enabled LSU starts its asynchronous memory request.",
+        chips: ["core_state = 011", "registers → source values", "LSU: IDLE → REQUESTING"],
+        watch: ["The address for LDR/STR is the first source value.", "For STR, the second source value is the data to write.", "All active lanes make their requests in parallel, then contend at the controller."]
       },
       {
         title: "WAIT",
@@ -1310,7 +1310,7 @@
       },
       {
         title: "UPDATE",
-        text: "The register file writes rd from the ALU, LSU, or immediate mux. NZP updates after CMP. The scheduler advances to next_pc, or marks the core done if this was RET.",
+        text: "The register file writes the destination register from the ALU, LSU, or immediate mux. Condition flags update after CMP. The scheduler advances to next_pc, or marks the core done if this was RET.",
         chips: ["core_state = 110", "register writeback", "current_pc ← next_pc"],
         watch: ["Only R0–R12 are writable.", "The scheduler uses the last lane's next_pc, assuming convergence.", "After UPDATE the next instruction begins at FETCH."]
       }
@@ -1318,16 +1318,16 @@
 
     const modeNotes = {
       add: {
-        2: "For ADD, rs and rt are ordinary register reads; no LSU becomes active.",
+        2: "For ADD, the first and second source registers are ordinary reads; no LSU becomes active.",
         3: "There are no pending LSU requests, so WAIT usually advances immediately.",
-        4: "Each lane's ALU computes rs + rt using its own values.",
-        5: "The ADD writes rd. The demo uses ADD R6, R4, R5."
+        4: "Each lane's ALU adds its first and second source values.",
+        5: "The ADD writes the destination register. The demo uses ADD R6, R4, R5."
       },
       ldr: {
-        2: "For LDR, the address is rs. Every active LSU enters REQUESTING and presents mem_read_valid.",
+        2: "For LDR, the address is the first source value. Every active LSU enters REQUESTING and presents mem_read_valid.",
         3: "The core remains here until the data controller gets each response and every LSU reaches DONE.",
         4: "The ALU does little for LDR; load data is carried toward the register writeback mux.",
-        5: "The loaded LSU value is written to rd. The demo uses LDR R4, R4."
+        5: "The loaded LSU value is written to the destination register. The demo uses LDR R4, R4."
       }
     };
 

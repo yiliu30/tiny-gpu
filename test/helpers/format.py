@@ -105,6 +105,7 @@ def format_cycle(dut, cycle_id: int, thread_id: Optional[int] = None):
         logger.debug(f"\n+--------------------- Core {core.i.value} ---------------------+")
 
         instruction = str(core.core_instance.instruction.value)
+        logger.debug(f"Instruction Bits: {int(instruction, 2):016b}")
         for thread in core.core_instance.threads:
             if int(thread.i.value) < int(str(core.core_instance.thread_count.value), 2): # if enabled
                 block_idx = core.core_instance.block_id.value

@@ -17,6 +17,8 @@ PROCESS_ID = 1
 
 
 def build_trace(cycles: list[CycleSnapshot], source: Path) -> dict[str, object]:
+    """Build a Perfetto-compatible trace event document from parsed snapshots."""
+
     events: list[dict[str, object]] = []
     core_ids = sorted({core for cycle in cycles for core in cycle.cores})
     lanes_by_core: dict[int, list[int]] = {core: [] for core in core_ids}
@@ -143,6 +145,8 @@ def build_trace(cycles: list[CycleSnapshot], source: Path) -> dict[str, object]:
 
 
 def main() -> None:
+    """Convert the command-line log path into a Perfetto trace file."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", type=Path, help="tiny-gpu cycle log to convert")
     parser.add_argument("-o", "--output", type=Path, help="output JSON path (default: beside the log)")

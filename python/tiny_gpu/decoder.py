@@ -9,6 +9,8 @@ from . import isa
 
 @dataclass
 class DecoderOutputs:
+    """Control signals and instruction fields produced by the decoder."""
+
     rd_address: int = 0
     rs_address: int = 0
     rt_address: int = 0
@@ -25,16 +27,22 @@ class DecoderOutputs:
     ret: int = 0
 
     def copy(self) -> "DecoderOutputs":
+        """Return an independent copy so evaluate can stage changes safely."""
+
         return DecoderOutputs(**vars(self))
 
 
 class Decoder:
-    """Registered decoder with the same inactive-state behavior as the RTL."""
+    """Instruction decoder with the same inactive-state behavior as the Verilog."""
 
     def __init__(self) -> None:
+        """Create a decoder with all control signals cleared."""
+
         self.outputs = DecoderOutputs()
 
     def evaluate(self, *, reset: bool, core_state: int, instruction: int) -> DecoderOutputs:
+        """Return decoded controls for the current instruction without committing them."""
+
         if reset:
             return DecoderOutputs()
 
@@ -95,6 +103,8 @@ class Decoder:
         return outputs
 
     def clock(self, *, reset: bool, core_state: int, instruction: int) -> None:
+        """Commit newly decoded controls at a simulated rising clock edge."""
+
         self.outputs = self.evaluate(
             reset=reset,
             core_state=core_state,

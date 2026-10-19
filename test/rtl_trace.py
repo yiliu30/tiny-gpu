@@ -20,6 +20,8 @@ from tiny_gpu.trace import TraceRecord
 
 
 def _record_for_thread(cycle: CycleSnapshot, core, thread) -> TraceRecord:
+    """Convert one thread snapshot into the canonical Python trace schema."""
+
     if core.pc is None:
         raise ValueError(f"cycle {cycle.index}, core {core.index}: missing PC")
     if core.instruction_bits is None:
@@ -62,6 +64,8 @@ def _record_for_thread(cycle: CycleSnapshot, core, thread) -> TraceRecord:
 
 
 def records_from_log(path: Path) -> list[TraceRecord]:
+    """Convert every core and thread in a Verilog text log into trace records."""
+
     records: list[TraceRecord] = []
     for cycle in parse_log(path):
         for core in cycle.cores.values():

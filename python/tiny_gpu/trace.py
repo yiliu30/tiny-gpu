@@ -12,6 +12,8 @@ from .isa import InstructionFields
 
 @dataclass(frozen=True, order=True)
 class TraceKey:
+    """Unique identity of one lane observation in one simulated cycle."""
+
     cycle: int
     core: int
     lane: int
@@ -19,6 +21,8 @@ class TraceKey:
 
 @dataclass
 class TraceRecord:
+    """Canonical observation of one lane during one simulated cycle."""
+
     cycle: int
     core: int
     lane: int
@@ -41,9 +45,13 @@ class TraceRecord:
 
     @property
     def key(self) -> TraceKey:
+        """Return the cycle, core, and lane identity used for comparisons."""
+
         return TraceKey(self.cycle, self.core, self.lane)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-compatible representation of the record."""
+
         result: dict[str, Any] = {
             "cycle": self.cycle,
             "core": self.core,
@@ -73,6 +81,8 @@ class TraceRecord:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "TraceRecord":
+        """Rebuild a trace record from its JSON-compatible representation."""
+
         known = {
             "cycle",
             "core",
@@ -118,6 +128,8 @@ class TraceRecord:
 
 
 def write_jsonl(path: Path, records: Iterable[TraceRecord]) -> None:
+    """Write records as deterministic JSON Lines with one record per line."""
+
     lines = [
         json.dumps(record.to_dict(), sort_keys=True, separators=(",", ":"))
         for record in records
@@ -126,6 +138,8 @@ def write_jsonl(path: Path, records: Iterable[TraceRecord]) -> None:
 
 
 def read_jsonl(path: Path) -> list[TraceRecord]:
+    """Read JSON Lines records and report the source line for malformed input."""
+
     records: list[TraceRecord] = []
     for line_number, line in enumerate(path.read_text().splitlines(), start=1):
         if not line.strip():
@@ -139,6 +153,8 @@ def read_jsonl(path: Path) -> list[TraceRecord]:
 
 @dataclass(frozen=True)
 class TraceDivergence:
+    """Description of the first difference between two traces."""
+
     kind: str
     cycle: int
     core: int
@@ -149,7 +165,11 @@ class TraceDivergence:
 
 
 class TraceComparisonError(AssertionError):
+    """Assertion error that carries structured information about a divergence."""
+
     def __init__(self, divergence: TraceDivergence) -> None:
+        """Build a readable message from a structured trace divergence."""
+
         self.divergence = divergence
         if divergence.kind == "field":
             detail = (
@@ -165,6 +185,8 @@ class TraceComparisonError(AssertionError):
 
 
 def _flatten(value: Any, prefix: str = "") -> dict[str, Any]:
+    """Flatten nested mappings into dotted field names for comparison."""
+
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
         for key in sorted(value):
@@ -175,6 +197,8 @@ def _flatten(value: Any, prefix: str = "") -> dict[str, Any]:
 
 
 def _index(records: Sequence[TraceRecord], label: str) -> dict[TraceKey, TraceRecord]:
+    """Index records by cycle, core, and lane while rejecting duplicates."""
+
     indexed: dict[TraceKey, TraceRecord] = {}
     for record in records:
         if record.key in indexed:

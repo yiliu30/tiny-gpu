@@ -113,9 +113,13 @@ class InstructionFields:
 
     @property
     def name(self) -> str:
+        """Return the assembly name for this opcode, or ``UNKNOWN``."""
+
         return OPCODE_NAMES.get(self.opcode, "UNKNOWN")
 
     def to_dict(self) -> dict[str, int]:
+        """Return the shared instruction fields as JSON-compatible values."""
+
         return {
             "opcode": self.opcode,
             "rd": self.rd,

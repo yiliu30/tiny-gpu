@@ -1,4 +1,4 @@
-"""Cycle-accurate Python model of tiny-gpu."""
+"""Learning-oriented Python model of the tiny-gpu hardware."""
 
 from .alu import Alu
 from .decoder import Decoder

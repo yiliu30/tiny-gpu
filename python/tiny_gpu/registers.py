@@ -9,13 +9,19 @@ from . import isa
 
 @dataclass
 class RegisterFileOutputs:
+    """Register operands and the complete register values after evaluation."""
+
     rs: int
     rt: int
     values: tuple[int, ...]
 
 
 class RegisterFile:
+    """Per-lane register file plus read-only block and thread identity values."""
+
     def __init__(self, *, threads_per_block: int = 4, thread_id: int = 0) -> None:
+        """Create a register file for one lane and seed its read-only registers."""
+
         self.threads_per_block = threads_per_block
         self.thread_id = thread_id
         self.rs = 0
@@ -23,6 +29,8 @@ class RegisterFile:
         self.values = list(self._reset_values())
 
     def _reset_values(self) -> tuple[int, ...]:
+        """Return the register image produced by reset."""
+
         values = [0] * 16
         values[14] = self.threads_per_block & 0xFF
         values[15] = self.thread_id & 0xFF
@@ -44,6 +52,8 @@ class RegisterFile:
         alu_out: int,
         lsu_out: int,
     ) -> RegisterFileOutputs:
+        """Return read operands and the next register image without committing it."""
+
         if reset:
             return RegisterFileOutputs(rs=0, rt=0, values=self._reset_values())
 
@@ -69,6 +79,8 @@ class RegisterFile:
         return RegisterFileOutputs(rs=rs, rt=rt, values=tuple(values))
 
     def clock(self, **kwargs: int | bool) -> None:
+        """Commit evaluated operands and register values at a simulated clock edge."""
+
         outputs = self.evaluate(**kwargs)
         self.rs = outputs.rs
         self.rt = outputs.rt

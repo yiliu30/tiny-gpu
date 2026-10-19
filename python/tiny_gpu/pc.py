@@ -1,4 +1,4 @@
-"""Per-lane program counter and NZP state; mirrors ``src/pc.sv``."""
+"""Per-lane program counter and negative-zero-positive state; mirrors ``src/pc.sv``."""
 
 from __future__ import annotations
 
@@ -9,12 +9,18 @@ from . import isa
 
 @dataclass
 class PcOutputs:
+    """Next program counter and negative, zero, positive (NZP) condition state."""
+
     nzp: int
     next_pc: int
 
 
 class PcUnit:
+    """Per-lane program counter and condition-code register."""
+
     def __init__(self) -> None:
+        """Create a program counter and condition register cleared to zero."""
+
         self.nzp = 0
         self.next_pc = 0
 
@@ -31,6 +37,8 @@ class PcUnit:
         alu_out: int,
         current_pc: int,
     ) -> PcOutputs:
+        """Return the next program counter and condition state without committing them."""
+
         if reset:
             return PcOutputs(nzp=0, next_pc=0)
 
@@ -51,6 +59,8 @@ class PcUnit:
         return PcOutputs(nzp=nzp, next_pc=next_pc)
 
     def clock(self, **kwargs: int | bool) -> None:
+        """Commit the evaluated program counter and condition state at a clock edge."""
+
         outputs = self.evaluate(**kwargs)
         self.nzp = outputs.nzp
         self.next_pc = outputs.next_pc

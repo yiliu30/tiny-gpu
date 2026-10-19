@@ -7,6 +7,8 @@ from typing import Any, Protocol, Sequence
 
 
 class SimulationPhase(str, Enum):
+    """Ordered phases used by one simulated clock step."""
+
     SERVICE_MEMORY = "service_memory"
     SETTLE = "settle"
     CAPTURE = "capture"
@@ -15,17 +17,24 @@ class SimulationPhase(str, Enum):
 
 
 class SimulationModel(Protocol):
+    """Operations a model must provide to the shared simulation harness."""
+
     done: bool
 
-    def service_external_memory(self) -> None: ...
+    def service_external_memory(self) -> None:
+        """Return pending external-memory responses to the model."""
 
-    def settle(self) -> None: ...
+    def settle(self) -> None:
+        """Let combinational values settle before the pre-edge capture."""
 
-    def observe(self) -> Sequence[Any]: ...
+    def observe(self) -> Sequence[Any]:
+        """Capture the state visible before the next rising clock edge."""
 
-    def evaluate_clocked(self) -> None: ...
+    def evaluate_clocked(self) -> None:
+        """Evaluate clocked modules while they still see the old state."""
 
-    def commit(self) -> None: ...
+    def commit(self) -> None:
+        """Publish all staged state changes together."""
 
 
 class SimulationHarness:
@@ -37,6 +46,8 @@ class SimulationHarness:
         *,
         phases: list[SimulationPhase] | None = None,
     ) -> None:
+        """Store the model and an optional phase recorder for tests."""
+
         self.model = model
         self.phases = phases
         self.snapshots: list[Sequence[Any]] = []
@@ -46,6 +57,8 @@ class SimulationHarness:
             self.phases.append(phase)
 
     def step(self) -> Sequence[Any]:
+        """Run one complete service, settle, capture, evaluate, and commit cycle."""
+
         self._enter(SimulationPhase.SERVICE_MEMORY)
         self.model.service_external_memory()
         self._enter(SimulationPhase.SETTLE)
@@ -60,6 +73,8 @@ class SimulationHarness:
         return snapshot
 
     def run_until_done(self, *, max_cycles: int = 100_000) -> list[Sequence[Any]]:
+        """Step until the model reports completion, with a cycle limit."""
+
         while not self.model.done:
             self.step()
             if len(self.snapshots) > max_cycles:

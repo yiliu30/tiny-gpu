@@ -1,4 +1,4 @@
-"""Arithmetic-logic unit; mirrors ``src/alu.sv``."""
+"""Arithmetic-logic unit (ALU) model; mirrors ``src/alu.sv``."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ from . import isa
 
 
 class Alu:
-    """The ALU's output is registered and only changes during EXECUTE."""
+    """Arithmetic-logic unit whose output register changes only in EXECUTE."""
 
     def __init__(self) -> None:
+        """Create an arithmetic-logic unit with a zeroed output register."""
+
         self.alu_out = 0
 
     def evaluate(
@@ -22,6 +24,8 @@ class Alu:
         rs: int,
         rt: int,
     ) -> int:
+        """Return the output implied by the inputs without changing stored state."""
+
         if reset:
             return 0
         if not enable or core_state != isa.CORE_EXECUTE:
@@ -56,6 +60,8 @@ class Alu:
         rs: int,
         rt: int,
     ) -> None:
+        """Commit the evaluated output at a simulated rising clock edge."""
+
         self.alu_out = self.evaluate(
             reset=reset,
             enable=enable,

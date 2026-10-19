@@ -27,6 +27,8 @@ RTL_COMMIT = "02b6c2c"
 
 
 def _sha256(path: Path) -> str:
+    """Return the SHA-256 digest of a file."""
+
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -41,6 +43,8 @@ def _fixture_entry(
     description: str,
     records,
 ) -> dict[str, object]:
+    """Build one manifest entry describing a generated trace fixture."""
+
     return {
         "path": str(output.relative_to(DEFAULT_OUTPUT.parent.parent.parent.parent)),
         "mode": "compatibility",
@@ -60,6 +64,8 @@ def generate(
     matmul_log: Path,
     output_dir: Path = DEFAULT_OUTPUT,
 ) -> dict[str, object]:
+    """Normalize Verilog logs into fixtures and return the generated manifest."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, object] = {
         "schema_version": 1,
@@ -98,6 +104,8 @@ def generate(
 
 
 def main() -> None:
+    """Generate trace fixtures from the two command-line log paths."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matadd-log", type=Path, required=True)
     parser.add_argument("--matmul-log", type=Path, required=True)

@@ -1,77 +1,87 @@
 # tiny-gpu Python model
 
-This package contains the first four stages of a Python model for tiny-gpu. It
-provides a readable bridge to the Verilog register-transfer-level (RTL)
-hardware model. Each Python module mirrors one hardware source file where that
-module exists, so the two implementations can be read side by side.
+A deterministic, cycle-accurate Python model of the RTL at commit `02b6c2c`.
+Hardware modules map one-to-one to `src/*.sv` so the two implementations can be
+read side by side. See [MODULE_GUIDE.md](MODULE_GUIDE.md) for the module map,
+execution phases, memory handshakes, and known RTL quirks.
 
-Stage A models the small building blocks and the shared simulation machinery:
+## Quick start
 
-- `alu.py`: the arithmetic-logic unit (`Alu`), which performs addition,
-  subtraction, multiplication, division, and comparison operations.
-- `decoder.py`: the instruction decoder (`Decoder`), which turns a 16-bit
-  instruction into control signals.
-- `registers.py`: one lane's register file (`RegisterFile`), including the
-  read-only block and thread identity registers and the arithmetic-logic or
-  load-store result selected for a write.
-- `pc.py`: one lane's program counter (`PcUnit`) and its negative, zero, and
-  positive (NZP) condition bits used by branch instructions.
-- `harness.py`: the ordered simulation phases that keep observations and clock
-  updates in the same order as the Verilog testbench.
-- `trace.py`: canonical trace records, deterministic JavaScript Object Notation
-  (JSON) Lines input/output (one JSON value per line), and first-difference
-  comparison.
-- `memory.py`: external memory used by the testbench.
-- `isa.py`: instruction-set architecture constants and field extraction.
+The package targets Python 3.10+ and has no runtime dependencies.
 
-Stage B adds the shared control path for one compute core:
+```bash
+cd python
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[test]'
+python -m pytest -q
+```
 
-- `fetcher.py`: requests the 16-bit instruction selected by the program counter
-  and holds it until decoding begins.
-- `scheduler.py`: advances the core through fetch, decode, memory request,
-  memory wait, execute, and update states.
-- `core.py`: joins the shared decoder, scheduler, and fetcher with one
-  arithmetic-logic unit, register file, program counter, and load-store stub per
-  lane. A lane is one parallel thread position within a block.
-- `kernels.py`: binary instruction images for the bundled matrix-addition and
-  matrix-multiplication examples.
+Run a bundled kernel and write a trace:
 
-During Stage B, a temporary load-store placeholder rejected `LDR` and `STR`
-instead of silently returning zero load data. Stage C replaces it with the real
-load-store unit described below.
+```bash
+# Canonical JSONL records.
+tiny-gpu-trace matadd --format jsonl -o matadd.jsonl
 
-Stage C adds the data-memory path and shared arbitration:
+# Waveform viewer (GTKWave, Surfer, etc.).
+tiny-gpu-trace matadd --format vcd -o matadd.vcd
 
-- `lsu.py`: one load-store unit (LSU) per lane. A load reads a data-memory value;
-  a store writes one. The unit requests access, waits for the response, holds
-  the returned value, and then returns to idle.
-- `controller.py`: a shared memory controller. A **consumer** is a unit that
-  requests memory access, and a **channel** is one external memory connection.
-  The controller gives each active consumer sole ownership of a channel until
-  its request is acknowledged and released, so two lanes cannot use the same
-  channel at once.
+# Timeline viewer: open the file at https://ui.perfetto.dev/.
+tiny-gpu-trace matmul --format perfetto -o matmul.perfetto.json
+```
 
-Stage D adds the complete top-level graphics processing unit (GPU) wiring:
+`--mode full` is the default and captures every enabled lane plus architectural
+state. `--mode compatibility` reproduces the fields emitted by the original RTL
+test logs. Supported kernels are `matadd`, `matmul`, and the bounded
+`partial` block scenario.
 
-- `dcr.py`: the device control register (`Dcr`). This register stores the total
-  number of threads that the next kernel should launch.
-- `dispatch.py`: the block dispatcher (`Dispatch`). A **thread** is one parallel
-  execution position, and a **block** is a group of threads that one core runs
-  together. The dispatcher assigns each block to an available core and reports
-  completion when all blocks finish.
-- `gpu.py`: the complete `Gpu` wrapper. It connects the device control register,
-  dispatcher, compute cores, program-memory controller, data-memory controller,
-  and external memories.
+## Verified baselines
 
-The model now runs full kernels through the same launch sequence as the Verilog
-testbench: reset, write the thread count, assert start, run until the dispatcher
-reports completion, and capture pre-edge trace records. It reproduces all 178
-matrix-addition cycles and all 491 compatibility-filtered matrix-multiplication
-cycles. Later Stage E adds complete-lane traces and command-line export tools.
+The Python model matches the pinned RTL fixtures exactly, including the first
+and last observed cycles.
+
+| Kernel | Mode | Cycles | Records | Lanes | Result |
+| --- | --- | ---: | ---: | --- | --- |
+| matadd | compatibility | 178 | 1424 | 4 lanes x 2 cores | `[0, 2, 4, 6, 8, 10, 12, 14]` |
+| matadd | full | 178 | 1424 | 4 lanes x 2 cores | same |
+| matmul | compatibility | 491 | 491 | global thread 1 | `[7, 10, 15, 22]` |
+| matmul | full | 491 | 1964 | 4 lanes x 1 core | same |
+| partial | compatibility | 60 | 303 | 5 threads total | stale-PC quirk preserved |
+
+Full records add `alu_out`, `lsu_out`, `constant`, and `nzp` for every enabled
+lane. One record per cycle carries the global `arch_state` object containing
+the dispatcher, controllers, fetchers, LSU relay, memory ports, DCR, and
+top-level `done` signal.
+
+## Trace formats
+
+- JSONL is the canonical source and the format consumed by the comparator.
+- VCD contains core stages, fetches, instructions, PC, lane LSU state,
+  registers, ALU/LSU/constant outputs, NZP, and flattened architectural state.
+- Perfetto contains one core-stage track and one track per enabled lane. Full
+  matadd has 10 tracks; full matmul has 5. One simulated cycle is 1 us.
+
+The writers consume `TraceRecord` objects directly. They do not parse RTL text
+logs.
+
+## Simulation contract
+
+Each cycle performs these phases in order:
+
+1. Service external program and data memory.
+2. Settle combinational values.
+3. Capture the pre-edge trace.
+4. Evaluate clocked processes.
+5. Commit staged nonblocking assignments.
+
+The RTL testbench checks `done` before the current edge commits, so the Python
+runner deliberately captures the final trailing cycle. Do not replace this with
+a conventional `while not done` loop.
+
 `Gpu.run_until_testbench_done()` delegates to the shared `SimulationHarness`.
-`Gpu` also validates the pinned compatibility profile at construction time and
-rejects unsupported address widths, data widths, channel counts, core counts,
-and lanes per core instead of producing a misleading trace.
+`Gpu` validates the pinned compatibility profile at construction and rejects
+unsupported address widths, data widths, channel counts, core counts, and lanes
+per core before simulation starts.
 
 ## Pinned comparison semantics
 
@@ -85,22 +95,41 @@ The arithmetic-logic unit reproduces the pinned RTL comparison behavior. It
 wraps `rs - rt` to eight bits and compares that unsigned result with zero. A
 nonzero wrapped result sets the positive bit, including for a mathematical
 negative difference, so the negative bit is never set. This deliberately
-preserves the behavior of the reference RTL instead of correcting it.
+preserves the reference RTL instead of correcting it.
 
-Run the fast, simulator-independent tests with:
+## Fixtures and differential testing
+
+The committed fixtures live in `test/fixtures/traces/02b6c2c/`. They include
+compatibility and full traces, counts, lanes, SHA-256 hashes, and source-log
+provenance.
+
+To regenerate them from RTL logs with stable names:
 
 ```bash
-cd python
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[test]'
-python -m pytest -q
+mkdir -p build
+TINY_GPU_LOG_FILE=test/logs/matadd_compatibility.txt make test_matadd
+TINY_GPU_LOG_FILE=test/logs/matmul_compatibility.txt make test_matmul
+TINY_GPU_LOG_FILE=test/logs/partial_compatibility.txt make test_partial_block
+TINY_GPU_FULL_TRACE=1 TINY_GPU_LOG_FILE=test/logs/matadd_full.txt make test_matadd
+TINY_GPU_FULL_TRACE=1 TINY_GPU_LOG_FILE=test/logs/matmul_full.txt make test_matmul
+
+python3 test/generate_trace_fixtures.py \
+  --matadd-log test/logs/matadd_compatibility.txt \
+  --matmul-log test/logs/matmul_compatibility.txt \
+  --matadd-full-log test/logs/matadd_full.txt \
+  --matmul-full-log test/logs/matmul_full.txt \
+  --partial-log test/logs/partial_compatibility.txt
 ```
 
-The trace fixture and normalization tools in `test/` let the Python model be
-checked against logs produced by the Verilog design. Stage C compares all 178
-cycles and checks that the result stored in data memory is
-`[0, 2, 4, 6, 8, 10, 12, 14]`. Stage D adds the top-level GPU and checks the
-491-cycle, single-thread matrix-multiplication compatibility trace with the
-result `[7, 10, 15, 22]`. Open a module beside its same-named file in `src/` to
-follow the hardware-to-Python mapping.
+RTL logs are intentionally gitignored; the normalized fixtures are committed.
+`test/run_rtl_differential.sh` performs the full regeneration and fails if any
+fixture changes. The RTL differential workflow is manual/scheduled because it
+requires Icarus Verilog, sv2v, and cocotb, while the fast Python suite does not.
+
+## Scope
+
+This is an executable architectural model, not synthesizable RTL. It preserves
+the pinned two-core, four-lanes-per-core compatibility profile and does not add
+caches, pipelining, branch divergence, or arbitrary `X` propagation. The only
+explicit unknown values are the RTL relay outputs that are still `X` in cycle 0;
+they are represented as `null` and then become known on the launch edge.

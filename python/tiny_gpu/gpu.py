@@ -132,6 +132,7 @@ class Gpu:
         self._staged_core_read_ready = None
         self._staged_core_read_data = None
         self._staged_core_write_ready = None
+        self._relay_initialized = False
         self._sync_dispatch_outputs()
 
     @property
@@ -167,6 +168,9 @@ class Gpu:
 
         self.device_control_write_enable = 0
         self.start = 1
+        # The RTL relay arrays are still X on the first captured cycle because
+        # their first post-reset sample happens on the launch edge.
+        self._relay_initialized = False
 
     def service_external_memory(self) -> None:
         """Return responses for program and data requests captured at the prior edge."""
@@ -187,15 +191,119 @@ class Gpu:
 
         return None
 
-    def observe(self, cycle: int, *, compatibility: bool = True) -> list[TraceRecord]:
+    def observe(
+        self,
+        cycle: int,
+        *,
+        compatibility: bool = True,
+        full: bool = False,
+    ) -> list[TraceRecord]:
         """Capture lane records for started cores before the next clock edge."""
 
         records = []
         for index, core in enumerate(self.cores):
             if self.dcr.value <= index * self.threads_per_block:
                 continue
-            records.extend(core.observe(cycle, compatibility=compatibility))
+            records.extend(
+                core.observe(
+                    cycle,
+                    compatibility=compatibility,
+                    full=full,
+                )
+            )
+        if full and records:
+            records[0].extra["arch_state"] = self.full_trace_state()
         return records
+
+    def full_trace_state(self) -> dict[str, object]:
+        """Return the full architectural state captured by the RTL log."""
+
+        relay_values = (
+            [
+                None if not self._relay_initialized else value
+                for value in self.lsu_read_valid
+            ],
+            [
+                None if not self._relay_initialized else value
+                for value in self.lsu_read_address
+            ],
+            [
+                None if not self._relay_initialized else value
+                for value in self.lsu_write_valid
+            ],
+            [
+                None if not self._relay_initialized else value
+                for value in self.lsu_write_address
+            ],
+            [
+                None if not self._relay_initialized else value
+                for value in self.lsu_write_data
+            ],
+        )
+        (
+            relay_read_valid,
+            relay_read_address,
+            relay_write_valid,
+            relay_write_address,
+            relay_write_data,
+        ) = relay_values
+
+        return {
+            "data_controller": {
+                "current_consumer": list(self.data_controller.current_consumer),
+                "serving": self.data_controller.serving,
+                "state": list(self.data_controller.state),
+            },
+            "data_memory": {
+                "read_address": list(self.data_controller.mem_read_address),
+                "read_data": list(self._data_response.read_data),
+                "read_ready": list(self._data_response.read_ready),
+                "read_valid": list(self.data_controller.mem_read_valid),
+                "write_address": list(self.data_controller.mem_write_address),
+                "write_data": list(self.data_controller.mem_write_data),
+                "write_ready": list(self._data_response.write_ready),
+                "write_valid": list(self.data_controller.mem_write_valid),
+            },
+            "dcr": {"thread_count": self.dcr.value},
+            "dispatch": {
+                "blocks_dispatched": self.dispatch.blocks_dispatched,
+                "blocks_done": self.dispatch.blocks_done,
+                "core_block_id": list(self.dispatch.core_block_id),
+                "core_reset": list(self.dispatch.core_reset),
+                "core_start": list(self.dispatch.core_start),
+                "core_thread_count": list(self.dispatch.core_thread_count),
+                "done": self.dispatch.done,
+                "start_execution": self.dispatch.start_execution,
+            },
+            "done": self.done,
+            "fetchers": {
+                "read_address": [core.program_mem_read_address for core in self.cores],
+                "read_data": list(self.program_controller.consumer_read_data),
+                "read_ready": list(self.program_controller.consumer_read_ready),
+                "read_valid": [core.program_mem_read_valid for core in self.cores],
+            },
+            "lsu_relay": {
+                "read_address": relay_read_address,
+                "read_data": list(self.data_controller.consumer_read_data),
+                "read_ready": list(self.data_controller.consumer_read_ready),
+                "read_valid": relay_read_valid,
+                "write_address": relay_write_address,
+                "write_data": relay_write_data,
+                "write_ready": list(self.data_controller.consumer_write_ready),
+                "write_valid": relay_write_valid,
+            },
+            "program_controller": {
+                "current_consumer": list(self.program_controller.current_consumer),
+                "serving": self.program_controller.serving,
+                "state": list(self.program_controller.state),
+            },
+            "program_memory": {
+                "read_address": list(self.program_controller.mem_read_address),
+                "read_data": list(self._program_response.read_data),
+                "read_ready": list(self._program_response.read_ready),
+                "read_valid": list(self.program_controller.mem_read_valid),
+            },
+        }
 
     def evaluate_clocked(self) -> None:
         """Evaluate every clocked module while all modules still see old state."""
@@ -285,6 +393,7 @@ class Gpu:
         self.dispatch.commit(self._staged_dispatch)
         self.program_controller.commit(self._staged_program_controller)
         self.data_controller.commit(self._staged_data_controller)
+        self._relay_initialized = True
         self._pending_program_request = self._next_pending_program_request
         self._pending_data_request = self._next_pending_data_request
 
@@ -307,12 +416,17 @@ class Gpu:
         *,
         max_cycles: int = 100_000,
         compatibility: bool = True,
+        full: bool = False,
     ) -> tuple[list[TraceRecord], int]:
         """Run through the shared harness and return flattened records plus cycle count."""
 
         simulation = SimulationHarness(
             self,
-            observe=lambda cycle: self.observe(cycle, compatibility=compatibility),
+            observe=lambda cycle: self.observe(
+                cycle,
+                compatibility=compatibility,
+                full=full,
+            ),
         )
         snapshots = simulation.run_until_done(max_cycles=max_cycles)
         records = [record for snapshot in snapshots for record in snapshot]

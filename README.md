@@ -19,6 +19,7 @@ Built with <15 files of fully documented Verilog, complete documentation on arch
   - [Matrix Addition](#matrix-addition)
   - [Matrix Multiplication](/tree/master?tab=readme-ov-file#matrix-multiplication)
 - [Simulation](#simulation)
+- [Python cycle-accurate model](#python-cycle-accurate-model)
 - [Advanced Functionality](#advanced-functionality)
 - [Next Steps](#next-steps)
 
@@ -344,6 +345,30 @@ python3 test/log_to_perfetto.py test/logs/log_<timestamp>.txt -o test/logs/matad
 ```
 
 The converters expose core stages, instructions, LSU states, PC values, and thread registers. In the Perfetto trace, one simulated cycle is represented by one time unit.
+
+### Python cycle-accurate model
+
+The `python/` package provides a simulator-independent, module-aligned model of
+the RTL. It is a learning bridge: each hardware module has a same-named Python
+file, and every cycle can be inspected or compared against the pinned RTL
+traces.
+
+```bash
+cd python
+python3 -m pip install -e '.[test]'
+python -m pytest -q
+
+tiny-gpu-trace matadd --format vcd -o matadd.vcd
+tiny-gpu-trace matmul --format perfetto -o matmul.perfetto.json
+```
+
+The model reproduces matadd and matmul functional results and exact full-lane
+architectural traces: 178 cycles / 1424 records for matadd and 491 cycles /
+1964 records for matmul. The generated files come directly from canonical
+Python trace records rather than from text-log parsing. See
+[python/MODULE_GUIDE.md](python/MODULE_GUIDE.md) for the RTL-to-Python module
+map, observation phases, controller arbitration, memory relay timing, and
+preserved partial-block quirk.
 
 **For anyone trying to run the simulation or play with this repo, please feel free to DM me on [twitter](https://twitter.com/majmudaradam) if you run into any issues - I want you to get this running!**
 

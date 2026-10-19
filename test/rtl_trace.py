@@ -60,6 +60,7 @@ def _record_for_thread(cycle: CycleSnapshot, core, thread) -> TraceRecord:
         alu_out=thread.alu_out,
         lsu_out=thread.lsu_out,
         constant=thread.constant,
+        nzp=thread.nzp,
     )
 
 
@@ -68,6 +69,7 @@ def records_from_log(path: Path) -> list[TraceRecord]:
 
     records: list[TraceRecord] = []
     for cycle in parse_log(path):
+        cycle_records: list[TraceRecord] = []
         for core in cycle.cores.values():
             lanes = set()
             for thread in core.threads:
@@ -77,7 +79,15 @@ def records_from_log(path: Path) -> list[TraceRecord]:
                         f"{path}: cycle {cycle.index}, core {core.index}: duplicate lane {record.lane}"
                     )
                 lanes.add(record.lane)
-                records.append(record)
+                cycle_records.append(record)
+        if cycle.arch_state is not None:
+            if not cycle_records:
+                raise ValueError(f"{path}: cycle {cycle.index}: Trace State without lane records")
+            missing_nzp = any(record.nzp is None for record in cycle_records)
+            if missing_nzp:
+                raise ValueError(f"{path}: cycle {cycle.index}: full trace is missing NZP")
+            cycle_records[0].extra["arch_state"] = cycle.arch_state
+        records.extend(cycle_records)
     if not records:
         raise ValueError(f"{path}: no lane records found")
     return records

@@ -1,5 +1,92 @@
+import json
+import os
 from typing import List, Optional
 from .logger import logger
+
+
+FULL_TRACE = os.environ.get("TINY_GPU_FULL_TRACE") == "1"
+
+
+def _bits_int(bits: str) -> Optional[int]:
+    bits = bits.lower()
+    if any(bit in "xz" for bit in bits):
+        return None
+    return int(bits, 2) if bits else 0
+
+
+def _signal_int(signal) -> Optional[int]:
+    return _bits_int(str(signal.value))
+
+
+def _packed_ints(signal, width: int, count: int) -> List[Optional[int]]:
+    bits = str(signal.value).lower().zfill(width * count)
+    values = [
+        _bits_int(bits[index:index + width])
+        for index in range(0, width * count, width)
+    ]
+    return list(reversed(values))
+
+
+def _full_trace_state(dut) -> dict:
+    dispatch = dut.dispatch_instance
+    program_controller = dut.program_memory_controller
+    data_controller = dut.data_memory_controller
+    return {
+        "data_controller": {
+            "current_consumer": _packed_ints(data_controller.current_consumer, 3, 4),
+            "serving": _signal_int(data_controller.channel_serving_consumer),
+            "state": _packed_ints(data_controller.controller_state, 3, 4),
+        },
+        "data_memory": {
+            "read_address": _packed_ints(dut.data_mem_read_address, 8, 4),
+            "read_data": _packed_ints(dut.data_mem_read_data, 8, 4),
+            "read_ready": _packed_ints(dut.data_mem_read_ready, 1, 4),
+            "read_valid": _packed_ints(dut.data_mem_read_valid, 1, 4),
+            "write_address": _packed_ints(dut.data_mem_write_address, 8, 4),
+            "write_data": _packed_ints(dut.data_mem_write_data, 8, 4),
+            "write_ready": _packed_ints(dut.data_mem_write_ready, 1, 4),
+            "write_valid": _packed_ints(dut.data_mem_write_valid, 1, 4),
+        },
+        "dcr": {"thread_count": _signal_int(dut.thread_count)},
+        "dispatch": {
+            "blocks_dispatched": _signal_int(dispatch.blocks_dispatched),
+            "blocks_done": _signal_int(dispatch.blocks_done),
+            "core_block_id": _packed_ints(dispatch.core_block_id, 8, 2),
+            "core_reset": _packed_ints(dispatch.core_reset, 1, 2),
+            "core_start": _packed_ints(dispatch.core_start, 1, 2),
+            "core_thread_count": _packed_ints(dispatch.core_thread_count, 3, 2),
+            "done": _signal_int(dispatch.done),
+            "start_execution": _signal_int(dispatch.start_execution),
+        },
+        "done": _signal_int(dut.done),
+        "fetchers": {
+            "read_address": _packed_ints(dut.fetcher_read_address, 8, 2),
+            "read_data": _packed_ints(dut.fetcher_read_data, 16, 2),
+            "read_ready": _packed_ints(dut.fetcher_read_ready, 1, 2),
+            "read_valid": _packed_ints(dut.fetcher_read_valid, 1, 2),
+        },
+        "lsu_relay": {
+            "read_address": _packed_ints(dut.lsu_read_address, 8, 8),
+            "read_data": _packed_ints(dut.lsu_read_data, 8, 8),
+            "read_ready": _packed_ints(dut.lsu_read_ready, 1, 8),
+            "read_valid": _packed_ints(dut.lsu_read_valid, 1, 8),
+            "write_address": _packed_ints(dut.lsu_write_address, 8, 8),
+            "write_data": _packed_ints(dut.lsu_write_data, 8, 8),
+            "write_ready": _packed_ints(dut.lsu_write_ready, 1, 8),
+            "write_valid": _packed_ints(dut.lsu_write_valid, 1, 8),
+        },
+        "program_controller": {
+            "current_consumer": _packed_ints(program_controller.current_consumer, 1, 1),
+            "serving": _signal_int(program_controller.channel_serving_consumer),
+            "state": _packed_ints(program_controller.controller_state, 3, 1),
+        },
+        "program_memory": {
+            "read_address": _packed_ints(dut.program_mem_read_address, 8, 1),
+            "read_data": _packed_ints(dut.program_mem_read_data, 16, 1),
+            "read_ready": _packed_ints(dut.program_mem_read_ready, 1, 1),
+            "read_valid": _packed_ints(dut.program_mem_read_valid, 1, 1),
+        },
+    }
 
 def format_register(register: int) -> str:
     if register < 13:
@@ -95,6 +182,8 @@ def format_registers(registers: List[str]) -> str:
     return ', '.join(formatted_registers)
 
 def format_cycle(dut, cycle_id: int, thread_id: Optional[int] = None):
+    if FULL_TRACE:
+        thread_id = None
     logger.debug(f"\n================================== Cycle {cycle_id} ==================================")
 
     for core in dut.cores:
@@ -132,11 +221,20 @@ def format_cycle(dut, cycle_id: int, thread_id: Optional[int] = None):
                     logger.debug("Registers:", format_registers([str(item.value) for item in thread.register_instance.registers]))
                     logger.debug(f"RS = {rs}, RT = {rt}")
 
-                    if reg_input_mux == 0:
+                    if FULL_TRACE:
                         logger.debug("ALU Out:", alu_out)
-                    if reg_input_mux == 1:
                         logger.debug("LSU Out:", lsu_out)
-                    if reg_input_mux == 2:
                         logger.debug("Constant:", constant)
+                        logger.debug("NZP:", _signal_int(thread.pc_instance.nzp))
+                    else:
+                        if reg_input_mux == 0:
+                            logger.debug("ALU Out:", alu_out)
+                        if reg_input_mux == 1:
+                            logger.debug("LSU Out:", lsu_out)
+                        if reg_input_mux == 2:
+                            logger.debug("Constant:", constant)
 
         logger.debug("Core Done:", str(core.core_instance.done.value))
+
+    if FULL_TRACE:
+        logger.debug("Trace State:", json.dumps(_full_trace_state(dut), sort_keys=True))

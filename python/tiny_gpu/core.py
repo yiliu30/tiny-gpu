@@ -261,7 +261,13 @@ class Core:
         self.program_mem_read_address = self.fetcher.mem_read_address
         self._staged = None
 
-    def observe(self, cycle: int, *, compatibility: bool = True) -> list[TraceRecord]:
+    def observe(
+        self,
+        cycle: int,
+        *,
+        compatibility: bool = True,
+        full: bool = False,
+    ) -> list[TraceRecord]:
         """Capture one trace record per active lane before the next clock edge."""
 
         decoded = isa.split_instruction(self.instruction)
@@ -270,7 +276,13 @@ class Core:
             alu_out = None
             lsu_out = None
             constant = None
-            if not compatibility or self.decoder.outputs.reg_input_mux == isa.REG_ARITHMETIC:
+            nzp = None
+            if full:
+                alu_out = self.alus[lane].alu_out
+                lsu_out = self.lsus[lane].lsu_out
+                constant = self.decoder.outputs.immediate
+                nzp = self.pcs[lane].nzp
+            elif not compatibility or self.decoder.outputs.reg_input_mux == isa.REG_ARITHMETIC:
                 alu_out = self.alus[lane].alu_out
             elif self.decoder.outputs.reg_input_mux == isa.REG_MEMORY:
                 lsu_out = self.lsus[lane].lsu_out
@@ -299,6 +311,7 @@ class Core:
                     alu_out=alu_out,
                     lsu_out=lsu_out,
                     constant=constant,
+                    nzp=nzp,
                 )
             )
         return records

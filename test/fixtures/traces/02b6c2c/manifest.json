@@ -14,8 +14,24 @@
         "path": "test/fixtures/traces/02b6c2c/matadd/compatibility.jsonl",
         "records": 1424,
         "sha256": "35fb5735583229703b6bfd137eeb1032530e6e333023fcfa651bed67af655def",
-        "source_log": "log_20261019065213.txt",
+        "source_log": "matadd_compatibility.txt",
         "source_log_sha256": "e807d5aa9cecd7eb5c30fa9eae35622ef443169a10b3a00e65a31e5066dcff05"
+      },
+      "full": {
+        "cycles": 178,
+        "description": "Full log: every enabled lane and architectural state, cycles 0-177",
+        "lanes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mode": "full",
+        "path": "test/fixtures/traces/02b6c2c/matadd/full.jsonl",
+        "records": 1424,
+        "sha256": "aa77a416e4a7147c52db0bc6536b3cc39ab1232b97b883f3d3d44828acebb76d",
+        "source_log": "matadd_full.txt",
+        "source_log_sha256": "4d6494dff2d48597911f043ff26031438705289042e42e373e6281280eacdb58"
       }
     },
     "matmul": {
@@ -29,8 +45,24 @@
         "path": "test/fixtures/traces/02b6c2c/matmul/compatibility.jsonl",
         "records": 491,
         "sha256": "11d56df0780ac07daf31af389b4178b0a2dcfa775016b5aa4102a8f6f53514b9",
-        "source_log": "log_20261019065216.txt",
+        "source_log": "matmul_compatibility.txt",
         "source_log_sha256": "522777eb52143ebca8bb2eb60caec97f86a732bd752b7a80930dfdfbc71b0fff"
+      },
+      "full": {
+        "cycles": 491,
+        "description": "Full log: every enabled lane and architectural state, cycles 0-490",
+        "lanes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mode": "full",
+        "path": "test/fixtures/traces/02b6c2c/matmul/full.jsonl",
+        "records": 1964,
+        "sha256": "2100d5650bd173311fdbbe8a47c1e9163ea4f9e664d4d9055c2cc60ee2085318",
+        "source_log": "matmul_full.txt",
+        "source_log_sha256": "06c319ec8e1c121a44a36e5529d3087673cc0e9c924fab0fbcd9d0f474f3dcc1"
       }
     },
     "partial": {
@@ -47,7 +79,7 @@
         "path": "test/fixtures/traces/02b6c2c/partial/compatibility.jsonl",
         "records": 303,
         "sha256": "1b37c352df9b5ce6dc7905ea71830e1f0ceccede594e6c7a4f23686325f731ca",
-        "source_log": "log_20261019070438.txt",
+        "source_log": "partial_compatibility.txt",
         "source_log_sha256": "dc89693c4648d0dcd4dd6c79a6c8d15eb7d189885fd3b224311cb5b4255b53cb"
       }
     }

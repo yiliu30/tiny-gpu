@@ -1,6 +1,6 @@
 # tiny-gpu Python model
 
-This package contains the first three stages of a Python model for tiny-gpu. It
+This package contains the first four stages of a Python model for tiny-gpu. It
 provides a readable bridge to the Verilog register-transfer-level (RTL)
 hardware model. Each Python module mirrors one hardware source file where that
 module exists, so the two implementations can be read side by side.
@@ -51,15 +51,28 @@ Stage C adds the data-memory path and shared arbitration:
   its request is acknowledged and released, so two lanes cannot use the same
   channel at once.
 
-`tests/two_core_harness.py` is Stage-C-only test scaffolding. It exists to
-validate the controller wiring before the real block dispatcher and top-level
-graphics processing unit arrive in Stage D.
+Stage D adds the complete top-level graphics processing unit (GPU) wiring:
 
-The model now executes the shared instruction path for single instruction,
-multiple data (SIMD) lanes and services both data-memory loads and stores. It
-still uses a small test-only two-core harness rather than a complete
-graphics-processing-unit (GPU) wrapper. Later stages add the real block
-dispatcher and top-level GPU.
+- `dcr.py`: the device control register (`Dcr`). This register stores the total
+  number of threads that the next kernel should launch.
+- `dispatch.py`: the block dispatcher (`Dispatch`). A **thread** is one parallel
+  execution position, and a **block** is a group of threads that one core runs
+  together. The dispatcher assigns each block to an available core and reports
+  completion when all blocks finish.
+- `gpu.py`: the complete `Gpu` wrapper. It connects the device control register,
+  dispatcher, compute cores, program-memory controller, data-memory controller,
+  and external memories.
+
+The model now runs full kernels through the same launch sequence as the Verilog
+testbench: reset, write the thread count, assert start, run until the dispatcher
+reports completion, and capture pre-edge trace records. It reproduces all 178
+matrix-addition cycles and all 491 compatibility-filtered matrix-multiplication
+cycles. Later Stage E adds complete-lane traces and command-line export tools.
+
+`Gpu.run_until_testbench_done()` delegates to the shared `SimulationHarness`.
+`Gpu` also validates the pinned compatibility profile at construction time and
+rejects unsupported address widths, data widths, channel counts, core counts,
+and lanes per core instead of producing a misleading trace.
 
 ## Pinned comparison semantics
 
@@ -88,5 +101,7 @@ python -m pytest -q
 The trace fixture and normalization tools in `test/` let the Python model be
 checked against logs produced by the Verilog design. Stage C compares all 178
 cycles and checks that the result stored in data memory is
-`[0, 2, 4, 6, 8, 10, 12, 14]`. Open a module beside its same-named file in
-`src/` to follow the hardware-to-Python mapping.
+`[0, 2, 4, 6, 8, 10, 12, 14]`. Stage D adds the top-level GPU and checks the
+491-cycle, single-thread matrix-multiplication compatibility trace with the
+result `[7, 10, 15, 22]`. Open a module beside its same-named file in `src/` to
+follow the hardware-to-Python mapping.

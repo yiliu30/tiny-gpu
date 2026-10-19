@@ -32,6 +32,24 @@
         "source_log": "log_20261019065216.txt",
         "source_log_sha256": "522777eb52143ebca8bb2eb60caec97f86a732bd752b7a80930dfdfbc71b0fff"
       }
+    },
+    "partial": {
+      "compatibility": {
+        "cycles": 60,
+        "description": "Compatibility log: bounded five-thread final block; one active lane in the second block",
+        "lanes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mode": "compatibility",
+        "path": "test/fixtures/traces/02b6c2c/partial/compatibility.jsonl",
+        "records": 303,
+        "sha256": "1b37c352df9b5ce6dc7905ea71830e1f0ceccede594e6c7a4f23686325f731ca",
+        "source_log": "log_20261019070438.txt",
+        "source_log_sha256": "dc89693c4648d0dcd4dd6c79a6c8d15eb7d189885fd3b224311cb5b4255b53cb"
+      }
     }
   },
   "generator": "test/generate_trace_fixtures.py",

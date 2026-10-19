@@ -43,7 +43,6 @@ The model now executes the shared instruction path for single instruction,
 multiple data (SIMD) lanes, but it does not yet service data-memory reads or
 writes. Later stages add memory arbitration, block dispatch, and the top-level
 graphics processing unit (GPU).
-
 ## Pinned comparison semantics
 
 `compare_traces()` always requires every expected field to match. Its default

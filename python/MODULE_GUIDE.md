@@ -21,10 +21,10 @@ channel** is one connection to external memory.
 | `scheduler.sv` | `tiny_gpu/scheduler.py` | Core stage progression and block completion | `current_pc`, `core_state`, `done` |
 | `fetcher.sv` | `tiny_gpu/fetcher.py` | Program-memory fetch handshake | fetcher state, read valid and address, instruction |
 | `decoder.sv` | `tiny_gpu/decoder.py` | Decode the 16-bit instruction | arithmetic-logic-unit, program-counter, load-store-unit, and condition-bit controls |
-| `registers.sv` | `tiny_gpu/registers.py` | Thirteen writable registers plus three identity registers | `rs`, `rt`, register file |
+| `registers.sv` | `tiny_gpu/registers.py` | Thirteen writable registers plus three identity registers | `first_source_value`, `second_source_value`, register file |
 | `alu.sv` | `tiny_gpu/alu.py` | Arithmetic-logic unit for add, subtract, multiply, divide, and compare | `alu_out` |
 | `lsu.sv` | `tiny_gpu/lsu.py` | Load-store-unit request and response handshakes | load-store state, read and write valid and address, `lsu_out` |
-| `pc.sv` | `tiny_gpu/pc.py` | Per-lane next-program-counter and negative-zero-positive condition update | `next_pc`, `nzp` |
+| `pc.sv` | `tiny_gpu/pc.py` | Per-lane next-program-counter and negative-zero-positive condition update | `next_pc`, `condition_flags` |
 | `controller.sv` | `tiny_gpu/controller.py` | Arbitrate multiple consumers onto limited memory channels | channel state, current consumer, serving mask, memory ports |
 
 Support modules are intentionally not hardware:

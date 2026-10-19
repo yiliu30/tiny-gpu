@@ -60,14 +60,14 @@ def test_missing_raw_instruction_bits_is_an_error(tmp_path):
         assert "Instruction Bits" in str(error)
     else:
         raise AssertionError("expected missing Instruction Bits to fail")
-def test_full_log_captures_nzp_and_cycle_architecture_state(tmp_path):
+def test_full_log_captures_condition_flags_and_cycle_architecture_state(tmp_path):
     log = tmp_path / "full.txt"
     log.write_text(
         SMALL_LOG.replace("ALU Out: 0", "ALU Out: 0\nNZP: 5")
         + 'Trace State: {"done": 0, "data_controller": {"serving": 0}}\n'
     )
     record = records_from_log(log)[0]
-    assert record.nzp == 5
+    assert record.condition_flags == 5
     assert record.extra["arch_state"] == {
         "done": 0,
         "data_controller": {"serving": 0},

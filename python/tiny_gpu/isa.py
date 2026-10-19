@@ -12,7 +12,7 @@ THREADS_PER_BLOCK = 4
 NUM_CORES = 2
 
 OP_NOP = 0b0000
-OP_BRNZP = 0b0001
+OP_BRANCH_ON_CONDITION = 0b0001
 OP_CMP = 0b0010
 OP_ADD = 0b0011
 OP_SUB = 0b0100
@@ -25,7 +25,7 @@ OP_RET = 0b1111
 
 OPCODE_NAMES = {
     OP_NOP: "NOP",
-    OP_BRNZP: "BRnzp",
+    OP_BRANCH_ON_CONDITION: "BRnzp",
     OP_CMP: "CMP",
     OP_ADD: "ADD",
     OP_SUB: "SUB",
@@ -35,6 +35,20 @@ OPCODE_NAMES = {
     OP_STR: "STR",
     OP_CONST: "CONST",
     OP_RET: "RET",
+}
+
+OPCODE_FULL_NAMES = {
+    OP_NOP: "No operation",
+    OP_BRANCH_ON_CONDITION: "Branch if negative, zero, or positive",
+    OP_CMP: "Compare",
+    OP_ADD: "Add",
+    OP_SUB: "Subtract",
+    OP_MUL: "Multiply",
+    OP_DIV: "Divide",
+    OP_LDR: "Load register",
+    OP_STR: "Store register",
+    OP_CONST: "Load constant",
+    OP_RET: "Return",
 }
 
 ALU_ADD = 0b00
@@ -108,13 +122,17 @@ def format_bits(value: int, width: int) -> str:
 
 @dataclass(frozen=True)
 class InstructionFields:
-    """Raw fields shared by multiple instruction formats."""
+    """Raw fields shared by multiple instruction formats.
+
+    Python names are descriptive. The serialized trace keeps the short Verilog
+    field names ``rd``, ``rs``, ``rt``, and ``nzp`` for fixture compatibility.
+    """
 
     opcode: int
-    rd: int
-    rs: int
-    rt: int
-    nzp: int
+    destination_register: int
+    first_source_register: int
+    second_source_register: int
+    branch_condition_mask: int
     immediate: int
 
     @property
@@ -123,17 +141,42 @@ class InstructionFields:
 
         return OPCODE_NAMES.get(self.opcode, "UNKNOWN")
 
+    @property
+    def full_name(self) -> str:
+        """Return a human-readable description of this instruction."""
+
+        return OPCODE_FULL_NAMES.get(self.opcode, "Unknown instruction")
+
     def to_dict(self) -> dict[str, int]:
         """Return the shared instruction fields as JSON-compatible values."""
 
         return {
             "opcode": self.opcode,
-            "rd": self.rd,
-            "rs": self.rs,
-            "rt": self.rt,
-            "nzp": self.nzp,
+            "rd": self.destination_register,
+            "rs": self.first_source_register,
+            "rt": self.second_source_register,
+            "nzp": self.branch_condition_mask,
             "immediate": self.immediate,
         }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, int]) -> "InstructionFields":
+        """Build fields from short RTL keys or descriptive Python keys."""
+
+        return cls(
+            opcode=int(value["opcode"]),
+            destination_register=int(value.get("rd", value.get("destination_register", 0))),
+            first_source_register=int(
+                value.get("rs", value.get("first_source_register", 0))
+            ),
+            second_source_register=int(
+                value.get("rt", value.get("second_source_register", 0))
+            ),
+            branch_condition_mask=int(
+                value.get("nzp", value.get("branch_condition_mask", 0))
+            ),
+            immediate=int(value["immediate"]),
+        )
 
 
 def split_instruction(instruction: int) -> InstructionFields:
@@ -142,9 +185,9 @@ def split_instruction(instruction: int) -> InstructionFields:
     raw = truncate(instruction, INSTRUCTION_BITS)
     return InstructionFields(
         opcode=(raw >> 12) & 0xF,
-        rd=(raw >> 8) & 0xF,
-        rs=(raw >> 4) & 0xF,
-        rt=raw & 0xF,
-        nzp=(raw >> 9) & 0x7,
+        destination_register=(raw >> 8) & 0xF,
+        first_source_register=(raw >> 4) & 0xF,
+        second_source_register=raw & 0xF,
+        branch_condition_mask=(raw >> 9) & 0x7,
         immediate=raw & 0xFF,
     )

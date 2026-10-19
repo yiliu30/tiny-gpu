@@ -32,7 +32,7 @@ def test_full_fixtures_include_every_lane_and_architecture_state():
         records = read_jsonl(FIXTURE_ROOT / kernel / "full.jsonl")
         assert len(records) == expected_records == entry["records"]
         assert entry["lanes"] == [0, 1, 2, 3]
-        assert all(record.nzp is not None for record in records)
+        assert all(record.condition_flags is not None for record in records)
         state_records = [record for record in records if "arch_state" in record.extra]
         assert len(state_records) == entry["cycles"]
         assert len({record.cycle for record in state_records}) == entry["cycles"]

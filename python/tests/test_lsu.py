@@ -9,8 +9,8 @@ def evaluate(lsu, **overrides):
         core_state=isa.CORE_REQUEST,
         decoded_mem_read_enable=0,
         decoded_mem_write_enable=0,
-        rs=9,
-        rt=7,
+        first_operand_value=9,
+        second_operand_value=7,
         mem_read_ready=0,
         mem_read_data=0,
         mem_write_ready=0,
@@ -55,7 +55,7 @@ def test_load_request_wait_and_done_sequence():
     assert advance(lsu, core_state=isa.CORE_UPDATE, decoded_mem_read_enable=1).state == isa.LSU_IDLE
 
 
-def test_store_request_carries_rs_and_rt():
+def test_store_request_carries_first_and_second_source_values():
     lsu = Lsu()
     advance(lsu, decoded_mem_write_enable=1)
     request = advance(lsu, core_state=isa.CORE_WAIT, decoded_mem_write_enable=1)

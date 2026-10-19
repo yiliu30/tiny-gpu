@@ -42,8 +42,8 @@ class Lsu:
         core_state: int,
         decoded_mem_read_enable: int,
         decoded_mem_write_enable: int,
-        rs: int,
-        rt: int,
+        first_operand_value: int,
+        second_operand_value: int,
         mem_read_ready: int,
         mem_read_data: int,
         mem_write_ready: int,
@@ -77,7 +77,7 @@ class Lsu:
                     state = isa.LSU_REQUESTING
             elif state == isa.LSU_REQUESTING:
                 mem_read_valid = 1
-                mem_read_address = rs & 0xFF
+                mem_read_address = first_operand_value & 0xFF
                 state = isa.LSU_WAITING
             elif state == isa.LSU_WAITING:
                 if mem_read_ready:
@@ -94,8 +94,8 @@ class Lsu:
                     state = isa.LSU_REQUESTING
             elif state == isa.LSU_REQUESTING:
                 mem_write_valid = 1
-                mem_write_address = rs & 0xFF
-                mem_write_data = rt & 0xFF
+                mem_write_address = first_operand_value & 0xFF
+                mem_write_data = second_operand_value & 0xFF
                 state = isa.LSU_WAITING
             elif state == isa.LSU_WAITING:
                 if mem_write_ready:

@@ -84,12 +84,12 @@ class CanonicalVcdWriter:
                 for register in REGISTER_SIGNALS:
                     self._add(lane_scope, register, 8)
                 self._add(lane_scope, "thread_id", 8)
-                self._add(lane_scope, "rs", 8)
-                self._add(lane_scope, "rt", 8)
+                self._add(lane_scope, "first_source_value", 8)
+                self._add(lane_scope, "second_source_value", 8)
                 self._add(lane_scope, "alu_out", 8)
                 self._add(lane_scope, "lsu_out", 8)
                 self._add(lane_scope, "constant", 8)
-                self._add(lane_scope, "nzp", 3)
+                self._add(lane_scope, "condition_flags", 3)
 
         if self.arch_values:
             for path, values in sorted(self.arch_values.items()):
@@ -137,12 +137,16 @@ class CanonicalVcdWriter:
             for register in isa.REGISTER_NAMES:
                 self._signal(lane_scope, register.lstrip("%")).value = record.registers.get(register)
             self._signal(lane_scope, "thread_id").value = record.thread_id
-            self._signal(lane_scope, "rs").value = record.rs
-            self._signal(lane_scope, "rt").value = record.rt
+            self._signal(lane_scope, "first_source_value").value = (
+                record.first_source_value
+            )
+            self._signal(lane_scope, "second_source_value").value = (
+                record.second_source_value
+            )
             self._signal(lane_scope, "alu_out").value = record.alu_out
             self._signal(lane_scope, "lsu_out").value = record.lsu_out
             self._signal(lane_scope, "constant").value = record.constant
-            self._signal(lane_scope, "nzp").value = record.nzp
+            self._signal(lane_scope, "condition_flags").value = record.condition_flags
 
         for path, values in self.arch_values.items():
             self._signal(("architecture",), path).value = values.get(cycle)
@@ -296,12 +300,12 @@ def build_perfetto(records: Sequence[TraceRecord], *, source: str) -> dict[str, 
             "instruction_bits": f"{record.instruction_bits:016b}",
             "pc": record.pc,
             "lsu_state": record.lsu_state,
-            "rs": record.rs,
-            "rt": record.rt,
+            "first_source_value": record.first_source_value,
+            "second_source_value": record.second_source_value,
             "alu_out": record.alu_out,
             "lsu_out": record.lsu_out,
             "constant": record.constant,
-            "nzp": record.nzp,
+            "condition_flags": record.condition_flags,
         }
         args.update(record.registers)
         if cycle not in first_lane_by_cycle and cycle in architecture:

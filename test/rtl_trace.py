@@ -55,12 +55,12 @@ def _record_for_thread(cycle: CycleSnapshot, core, thread) -> TraceRecord:
         done=core.done,
         lsu_state=thread.lsu_state,
         registers=registers,
-        rs=thread.rs,
-        rt=thread.rt,
+        first_source_value=thread.rs,
+        second_source_value=thread.rt,
         alu_out=thread.alu_out,
         lsu_out=thread.lsu_out,
         constant=thread.constant,
-        nzp=thread.nzp,
+        condition_flags=thread.nzp,
     )
 
 
@@ -83,7 +83,7 @@ def records_from_log(path: Path) -> list[TraceRecord]:
         if cycle.arch_state is not None:
             if not cycle_records:
                 raise ValueError(f"{path}: cycle {cycle.index}: Trace State without lane records")
-            missing_nzp = any(record.nzp is None for record in cycle_records)
+            missing_nzp = any(record.condition_flags is None for record in cycle_records)
             if missing_nzp:
                 raise ValueError(
                     f"{path}: cycle {cycle.index}: full trace is missing "

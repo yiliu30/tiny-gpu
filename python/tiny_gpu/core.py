@@ -145,8 +145,8 @@ class Core:
                 core_state=self.core_state,
                 arithmetic_mux=decoder_now.alu_arithmetic_mux,
                 output_mux=decoder_now.alu_output_mux,
-                rs=self.registers[lane].rs,
-                rt=self.registers[lane].rt,
+                first_operand_value=self.registers[lane].first_source_value,
+                second_operand_value=self.registers[lane].second_source_value,
             )
             alu_next.append(alu_out)
 
@@ -156,8 +156,8 @@ class Core:
                 core_state=self.core_state,
                 decoded_mem_read_enable=decoder_now.mem_read_enable,
                 decoded_mem_write_enable=decoder_now.mem_write_enable,
-                rs=self.registers[lane].rs,
-                rt=self.registers[lane].rt,
+                first_operand_value=self.registers[lane].first_source_value,
+                second_operand_value=self.registers[lane].second_source_value,
                 mem_read_ready=self.data_mem_read_ready[lane],
                 mem_read_data=self.data_mem_read_data[lane],
                 mem_write_ready=self.data_mem_write_ready[lane],
@@ -170,11 +170,11 @@ class Core:
                     enable=enable,
                     block_id=self.block_id,
                     core_state=self.core_state,
-                    reg_write_enable=decoder_now.reg_write_enable,
-                    reg_input_mux=decoder_now.reg_input_mux,
-                    rd_address=decoder_now.rd_address,
-                    rs_address=decoder_now.rs_address,
-                    rt_address=decoder_now.rt_address,
+                    register_write_enable=decoder_now.register_write_enable,
+                    register_input_mux=decoder_now.register_input_mux,
+                    destination_register_address=decoder_now.destination_register_address,
+                    first_source_register_address=decoder_now.first_source_register_address,
+                    second_source_register_address=decoder_now.second_source_register_address,
                     immediate=decoder_now.immediate,
                     alu_out=self.alus[lane].alu_out,
                     lsu_out=self.lsus[lane].lsu_out,
@@ -185,9 +185,9 @@ class Core:
                     reset=bool(self.reset),
                     enable=enable,
                     core_state=self.core_state,
-                    decoded_nzp=decoder_now.nzp,
+                    branch_condition_mask=decoder_now.branch_condition_mask,
                     decoded_immediate=decoder_now.immediate,
-                    nzp_write_enable=decoder_now.nzp_write_enable,
+                    condition_flags_write_enable=decoder_now.condition_flags_write_enable,
                     pc_mux=decoder_now.pc_mux,
                     alu_out=self.alus[lane].alu_out,
                     current_pc=self.current_pc,
@@ -243,12 +243,12 @@ class Core:
             lsu.mem_write_data = lsu_outputs.mem_write_data
 
             register_outputs = register_next[lane]
-            self.registers[lane].rs = register_outputs.rs
-            self.registers[lane].rt = register_outputs.rt
+            self.registers[lane].first_source_value = register_outputs.first_source_value
+            self.registers[lane].second_source_value = register_outputs.second_source_value
             self.registers[lane].values = list(register_outputs.values)
 
             pc_outputs = pc_next[lane]
-            self.pcs[lane].nzp = pc_outputs.nzp
+            self.pcs[lane].condition_flags = pc_outputs.condition_flags
             self.pcs[lane].next_pc = pc_outputs.next_pc
 
             self.data_mem_read_valid[lane] = lsu.mem_read_valid
@@ -276,15 +276,18 @@ class Core:
             alu_out = None
             lsu_out = None
             constant = None
-            nzp = None
+            condition_flags = None
             if full:
                 alu_out = self.alus[lane].alu_out
                 lsu_out = self.lsus[lane].lsu_out
                 constant = self.decoder.outputs.immediate
-                nzp = self.pcs[lane].nzp
-            elif not compatibility or self.decoder.outputs.reg_input_mux == isa.REG_ARITHMETIC:
+                condition_flags = self.pcs[lane].condition_flags
+            elif (
+                not compatibility
+                or self.decoder.outputs.register_input_mux == isa.REG_ARITHMETIC
+            ):
                 alu_out = self.alus[lane].alu_out
-            elif self.decoder.outputs.reg_input_mux == isa.REG_MEMORY:
+            elif self.decoder.outputs.register_input_mux == isa.REG_MEMORY:
                 lsu_out = self.lsus[lane].lsu_out
             else:
                 constant = self.decoder.outputs.immediate
@@ -306,12 +309,12 @@ class Core:
                         name: value
                         for name, value in zip(isa.REGISTER_NAMES, self.registers[lane].values)
                     },
-                    rs=self.registers[lane].rs,
-                    rt=self.registers[lane].rt,
+                    first_source_value=self.registers[lane].first_source_value,
+                    second_source_value=self.registers[lane].second_source_value,
                     alu_out=alu_out,
                     lsu_out=lsu_out,
                     constant=constant,
-                    nzp=nzp,
+                    condition_flags=condition_flags,
                 )
             )
         return records

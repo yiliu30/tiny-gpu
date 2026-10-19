@@ -35,12 +35,12 @@ class TraceRecord:
     done: int
     lsu_state: str
     registers: Mapping[str, int]
-    rs: int
-    rt: int
+    first_source_value: int
+    second_source_value: int
     alu_out: int | None = None
     lsu_out: int | None = None
     constant: int | None = None
-    nzp: int | None = None
+    condition_flags: int | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -66,14 +66,14 @@ class TraceRecord:
             "done": self.done,
             "lsu_state": self.lsu_state,
             "registers": dict(self.registers),
-            "rs": self.rs,
-            "rt": self.rt,
+            "rs": self.first_source_value,
+            "rt": self.second_source_value,
         }
         optional = {
             "alu_out": self.alu_out,
             "lsu_out": self.lsu_out,
             "constant": self.constant,
-            "nzp": self.nzp,
+            "nzp": self.condition_flags,
         }
         result.update({name: value for name, value in optional.items() if value is not None})
         result.update(self.extra)
@@ -113,16 +113,16 @@ class TraceRecord:
             fetcher_state=str(value["fetcher_state"]),
             pc=int(value["pc"]),
             instruction_bits=int(value["instruction_bits"]),
-            decoded=InstructionFields(**value["decoded"]),
+            decoded=InstructionFields.from_dict(value["decoded"]),
             done=int(value["done"]),
             lsu_state=str(value["lsu_state"]),
             registers={str(key): int(item) for key, item in value["registers"].items()},
-            rs=int(value["rs"]),
-            rt=int(value["rt"]),
+            first_source_value=int(value["rs"]),
+            second_source_value=int(value["rt"]),
             alu_out=int(value["alu_out"]) if "alu_out" in value else None,
             lsu_out=int(value["lsu_out"]) if "lsu_out" in value else None,
             constant=int(value["constant"]) if "constant" in value else None,
-            nzp=int(value["nzp"]) if "nzp" in value else None,
+            condition_flags=int(value["nzp"]) if "nzp" in value else None,
             extra={key: item for key, item in value.items() if key not in known},
         )
 

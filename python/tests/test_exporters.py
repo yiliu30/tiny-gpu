@@ -74,7 +74,13 @@ def test_vcd_is_structurally_valid_and_contains_full_lane_signals(tmp_path, mata
     assert len(identifiers) == len(set(identifiers))
     assert "$enddefinitions $end" in text
     assert text.endswith("#178\n")
-    assert {"pc", "nzp", "lsu_out", "constant", "data_controller_state_0"} <= names
+    assert {
+        "pc",
+        "condition_flags",
+        "lsu_out",
+        "constant",
+        "data_controller_state_0",
+    } <= names
     assert _parse_vcd(text) == (178, 398)
 
 

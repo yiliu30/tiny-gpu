@@ -11,16 +11,16 @@ from . import isa
 class DecoderOutputs:
     """Control signals and instruction fields produced by the decoder."""
 
-    rd_address: int = 0
-    rs_address: int = 0
-    rt_address: int = 0
-    nzp: int = 0
+    destination_register_address: int = 0
+    first_source_register_address: int = 0
+    second_source_register_address: int = 0
+    branch_condition_mask: int = 0
     immediate: int = 0
-    reg_write_enable: int = 0
+    register_write_enable: int = 0
     mem_read_enable: int = 0
     mem_write_enable: int = 0
-    nzp_write_enable: int = 0
-    reg_input_mux: int = 0
+    condition_flags_write_enable: int = 0
+    register_input_mux: int = 0
     alu_arithmetic_mux: int = 0
     alu_output_mux: int = 0
     pc_mux: int = 0
@@ -51,52 +51,52 @@ class Decoder:
             return outputs
 
         fields = isa.split_instruction(instruction)
-        outputs.rd_address = fields.rd
-        outputs.rs_address = fields.rs
-        outputs.rt_address = fields.rt
+        outputs.destination_register_address = fields.destination_register
+        outputs.first_source_register_address = fields.first_source_register
+        outputs.second_source_register_address = fields.second_source_register
         outputs.immediate = fields.immediate
-        outputs.nzp = fields.nzp
+        outputs.branch_condition_mask = fields.branch_condition_mask
 
-        outputs.reg_write_enable = 0
+        outputs.register_write_enable = 0
         outputs.mem_read_enable = 0
         outputs.mem_write_enable = 0
-        outputs.nzp_write_enable = 0
-        outputs.reg_input_mux = 0
+        outputs.condition_flags_write_enable = 0
+        outputs.register_input_mux = 0
         outputs.alu_arithmetic_mux = 0
         outputs.alu_output_mux = 0
         outputs.pc_mux = 0
         outputs.ret = 0
 
-        if fields.opcode == isa.OP_BRNZP:
+        if fields.opcode == isa.OP_BRANCH_ON_CONDITION:
             outputs.pc_mux = 1
         elif fields.opcode == isa.OP_CMP:
             outputs.alu_output_mux = 1
-            outputs.nzp_write_enable = 1
+            outputs.condition_flags_write_enable = 1
         elif fields.opcode == isa.OP_ADD:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_ARITHMETIC
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_ARITHMETIC
             outputs.alu_arithmetic_mux = isa.ALU_ADD
         elif fields.opcode == isa.OP_SUB:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_ARITHMETIC
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_ARITHMETIC
             outputs.alu_arithmetic_mux = isa.ALU_SUB
         elif fields.opcode == isa.OP_MUL:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_ARITHMETIC
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_ARITHMETIC
             outputs.alu_arithmetic_mux = isa.ALU_MUL
         elif fields.opcode == isa.OP_DIV:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_ARITHMETIC
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_ARITHMETIC
             outputs.alu_arithmetic_mux = isa.ALU_DIV
         elif fields.opcode == isa.OP_LDR:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_MEMORY
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_MEMORY
             outputs.mem_read_enable = 1
         elif fields.opcode == isa.OP_STR:
             outputs.mem_write_enable = 1
         elif fields.opcode == isa.OP_CONST:
-            outputs.reg_write_enable = 1
-            outputs.reg_input_mux = isa.REG_CONSTANT
+            outputs.register_write_enable = 1
+            outputs.register_input_mux = isa.REG_CONSTANT
         elif fields.opcode == isa.OP_RET:
             outputs.ret = 1
 

@@ -38,4 +38,4 @@ def test_thread_filter_is_independent_of_full_field_selection():
     assert cycles == 491
     assert len(records) == 491
     assert {record.thread_id for record in records} == {1}
-    assert all(record.nzp is not None for record in records)
+    assert all(record.condition_flags is not None for record in records)

@@ -159,7 +159,7 @@ Importantly, each register file contains a few read-only registers holding data 
 
 Dedicated arithmetic-logic unit for each thread to perform computations. Handles the `ADD`, `SUB`, `MUL`, `DIV` arithmetic instructions.
 
-Also handles the `CMP` comparison instruction which actually outputs whether the result of the difference between two registers is negative, zero or positive - and stores the result in the `NZP` register in the PC unit.
+Also handles the `CMP` comparison instruction, which outputs whether the difference between two registers is negative, zero, or positive and stores that result in the negative-zero-positive (`NZP`) condition register in the PC unit.
 
 ### LSUs
 
@@ -187,8 +187,8 @@ tiny-gpu implements a simple 11 instruction ISA built to enable simple kernels f
 
 For these purposes, it supports the following instructions:
 
-- `BRnzp` - Branch instruction to jump to another line of program memory if the NZP register matches the `nzp` condition in the instruction.
-- `CMP` - Compare the value of two registers and store the result in the NZP register to use for a later `BRnzp` instruction.
+- `BRnzp` (branch if negative, zero, or positive) - Jump to another line of program memory if the condition flags match the branch mask in the instruction.
+- `CMP` - Compare the value of two registers and store the condition result for a later `BRnzp` instruction.
 - `ADD`, `SUB`, `MUL`, `DIV` - Basic arithmetic operations to enable tensor math.
 - `LDR` - Load data from global memory.
 - `STR` - Store data into global memory.

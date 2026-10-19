@@ -26,6 +26,19 @@ handshakes, arbitration rules, and preserved hardware quirks.
 - **Architectural state:** the controller, dispatcher, fetch, memory, and
   completion values that are visible outside the individual lanes.
 
+The Python code uses descriptive instruction-field names:
+
+| Verilog field | Python name | Meaning |
+| --- | --- | --- |
+| `rd` | `destination_register` | register that receives a result |
+| `rs` | `first_source_register` | register supplying the first operand |
+| `rt` | `second_source_register` | register supplying the second operand |
+| `nzp` | `branch_condition_mask` | conditions selected by `BRnzp` |
+
+Canonical JSON Lines traces retain the short `rd`, `rs`, `rt`, and `nzp` keys
+because those keys are part of the pinned compatibility fixture format.
+Value Change Dump and Perfetto outputs use the descriptive names.
+
 ## Hardware module layout
 
 | Python module | Verilog counterpart | Responsibility |
@@ -157,10 +170,11 @@ comparison against older logs that captured fewer values. Use
 as a divergence.
 
 The arithmetic-logic unit reproduces the pinned RTL comparison behavior. It
-wraps `rs - rt` to eight bits and compares that unsigned result with zero. A
-nonzero wrapped result sets the positive bit, including for a mathematical
-negative difference, so the negative bit is never set. This deliberately
-preserves the reference RTL instead of correcting it.
+wraps the first source value minus the second source value to eight bits and
+compares that unsigned result with zero. A nonzero wrapped result sets the
+positive bit, including for a mathematical negative difference, so the negative
+bit is never set. This deliberately preserves the reference RTL instead of
+correcting it.
 
 ## Verification
 

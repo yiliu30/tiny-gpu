@@ -9,6 +9,8 @@ from . import isa
 
 @dataclass
 class LsuOutputs:
+    """State and memory-port values produced by a load-store unit."""
+
     state: int
     lsu_out: int
     mem_read_valid: int
@@ -19,9 +21,11 @@ class LsuOutputs:
 
 
 class IdleLsu:
-    """Hold all LSU outputs idle until the Stage C memory path lands."""
+    """Hold every load-store output idle until the Stage C memory path is added."""
 
     def __init__(self) -> None:
+        """Create an idle load-store unit with cleared memory requests."""
+
         self.state = isa.LSU_IDLE
         self.lsu_out = 0
         self.mem_read_valid = 0
@@ -31,6 +35,8 @@ class IdleLsu:
         self.mem_write_data = 0
 
     def evaluate(self, *, reset: bool, **_: int | bool) -> LsuOutputs:
+        """Return idle load-store values without changing stored state."""
+
         if reset:
             return LsuOutputs(isa.LSU_IDLE, 0, 0, 0, 0, 0, 0)
         return LsuOutputs(
@@ -44,6 +50,8 @@ class IdleLsu:
         )
 
     def clock(self, **kwargs: int | bool) -> None:
+        """Commit the idle load-store values at a simulated clock edge."""
+
         outputs = self.evaluate(**kwargs)
         self.state = outputs.state
         self.lsu_out = outputs.lsu_out

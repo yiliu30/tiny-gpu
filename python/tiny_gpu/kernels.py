@@ -1,4 +1,4 @@
-"""Bundled tiny-gpu kernels used by tests and the CLI."""
+"""Machine-code images for the bundled matrix kernels used by tests and tooling."""
 
 MATADD_PROGRAM = [
     0b0101000011011110,

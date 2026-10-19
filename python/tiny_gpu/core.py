@@ -16,7 +16,11 @@ from .trace import TraceRecord
 
 
 class Core:
+    """One compute core containing shared control and per-lane execution units."""
+
     def __init__(self, *, threads_per_block: int = 4, lsu_factory=IdleLsu) -> None:
+        """Create shared control plus one arithmetic, register, and program-counter unit per lane."""
+
         self.threads_per_block = threads_per_block
 
         self.reset = 0
@@ -54,33 +58,49 @@ class Core:
 
     @property
     def core_state(self) -> int:
+        """Return the scheduler's current core state code."""
+
         return self.scheduler.core_state
 
     @property
     def current_pc(self) -> int:
+        """Return the shared program counter used to fetch the current instruction."""
+
         return self.scheduler.current_pc
 
     @property
     def done(self) -> int:
+        """Return whether every active lane has reached the return instruction."""
+
         return self.scheduler.done
 
     @property
     def fetcher_state(self) -> int:
+        """Return the instruction fetcher's current state code."""
+
         return self.fetcher.state
 
     @property
     def instruction(self) -> int:
+        """Return the most recently fetched 16-bit instruction."""
+
         return self.fetcher.instruction
 
     @property
     def lsu_state(self) -> list[int]:
+        """Return the load-store state for every lane."""
+
         return [lsu.state for lsu in self.lsus]
 
     @property
     def next_pc(self) -> list[int]:
+        """Return the staged next program counter for every lane."""
+
         return [pc.next_pc for pc in self.pcs]
 
     def evaluate_clocked(self) -> None:
+        """Evaluate every clocked core component while all of them still see old state."""
+
         decoder_now = self.decoder.outputs
 
         fetcher_next = self.fetcher.evaluate(
@@ -178,6 +198,8 @@ class Core:
         )
 
     def commit(self) -> None:
+        """Publish all staged core updates together at the simulated clock edge."""
+
         if self._staged is None:
             raise RuntimeError("evaluate_clocked() must run before commit()")
         (
@@ -233,6 +255,8 @@ class Core:
         self._staged = None
 
     def observe(self, cycle: int, *, compatibility: bool = True) -> list[TraceRecord]:
+        """Capture one trace record per active lane before the next clock edge."""
+
         decoded = isa.split_instruction(self.instruction)
         records = []
         for lane in range(min(self.thread_count, self.threads_per_block)):

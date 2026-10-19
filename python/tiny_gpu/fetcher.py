@@ -9,6 +9,8 @@ from . import isa
 
 @dataclass
 class FetcherOutputs:
+    """Next fetcher state, program-memory request, and fetched instruction."""
+
     state: int
     mem_read_valid: int
     mem_read_address: int
@@ -16,7 +18,11 @@ class FetcherOutputs:
 
 
 class Fetcher:
+    """Request one instruction and hold it until the core enters decode."""
+
     def __init__(self) -> None:
+        """Create a fetcher waiting for the core to enter its fetch state."""
+
         self.state = isa.FETCHER_IDLE
         self.mem_read_valid = 0
         self.mem_read_address = 0
@@ -31,6 +37,8 @@ class Fetcher:
         mem_read_ready: int,
         mem_read_data: int,
     ) -> FetcherOutputs:
+        """Return the next fetch state and program-memory request without committing it."""
+
         if reset:
             return FetcherOutputs(isa.FETCHER_IDLE, 0, 0, 0)
 
@@ -61,6 +69,8 @@ class Fetcher:
         )
 
     def clock(self, **kwargs: int | bool) -> None:
+        """Commit the evaluated fetch state and program-memory request at a clock edge."""
+
         outputs = self.evaluate(**kwargs)
         self.state = outputs.state
         self.mem_read_valid = outputs.mem_read_valid

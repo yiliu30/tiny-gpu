@@ -24,4 +24,3 @@ class Dcr:
         """Commit the evaluated thread count at a simulated clock edge."""
 
         self.value = self.evaluate(reset=reset, write_enable=write_enable, data=data)
-

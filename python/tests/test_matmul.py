@@ -21,4 +21,3 @@ def test_gpu_matches_full_matmul_compatibility_trace():
     assert cycles == 491
     assert len(compatibility_records) == 491
     assert gpu.data_memory.memory[8:12] == [7, 10, 15, 22]
-

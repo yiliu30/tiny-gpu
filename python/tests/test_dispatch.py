@@ -40,4 +40,3 @@ def test_done_after_all_blocks_finish():
     assert dispatch.done == 0
     advance(dispatch, thread_count=4, core_done=[0, 0])
     assert dispatch.done == 1
-

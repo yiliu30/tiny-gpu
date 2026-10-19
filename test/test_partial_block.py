@@ -37,4 +37,3 @@ async def test_partial_block(dut):
         await cocotb.triggers.ReadOnly()
         format_cycle(dut, cycle)
         await RisingEdge(dut.clk)
-

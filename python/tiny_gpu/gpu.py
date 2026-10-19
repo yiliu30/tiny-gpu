@@ -344,4 +344,3 @@ def _validate_pinned_configuration(configuration: dict[str, int]) -> None:
     ]
     if mismatches:
         raise ValueError("unsupported Gpu configuration: " + "; ".join(mismatches))
-

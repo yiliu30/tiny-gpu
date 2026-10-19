@@ -81,4 +81,3 @@ def test_gpu_omits_unstarted_core_from_compatibility_trace():
 def test_gpu_rejects_unsupported_configuration(name, value):
     with pytest.raises(ValueError, match=name):
         Gpu(**{name: value})
-

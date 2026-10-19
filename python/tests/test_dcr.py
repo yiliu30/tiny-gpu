@@ -14,4 +14,3 @@ def test_dcr_reset_wins():
     dcr.value = 8
     dcr.clock(reset=True, write_enable=1, data=3)
     assert dcr.value == 0
-

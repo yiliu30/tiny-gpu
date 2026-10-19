@@ -37,4 +37,3 @@ def test_partial_final_block_matches_rtl_and_preserves_stale_next_pc_quirk():
     assert all(record.pc == 0 for record in core_one_lane_zero if record.instruction_bits)
     assert all(not record.done for record in core_one_lane_zero)
     assert core_one_lane_zero[-1].registers["R1"] == 7
-

@@ -68,7 +68,6 @@ testbench: reset, write the thread count, assert start, run until the dispatcher
 reports completion, and capture pre-edge trace records. It reproduces all 178
 matrix-addition cycles and all 491 compatibility-filtered matrix-multiplication
 cycles. Later Stage E adds complete-lane traces and command-line export tools.
-
 `Gpu.run_until_testbench_done()` delegates to the shared `SimulationHarness`.
 `Gpu` also validates the pinned compatibility profile at construction time and
 rejects unsupported address widths, data widths, channel counts, core counts,

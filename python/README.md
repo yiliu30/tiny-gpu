@@ -33,8 +33,9 @@ Stage B adds the shared control path for one compute core:
 - `core.py`: joins the shared decoder, scheduler, and fetcher with one
   arithmetic-logic unit, register file, program counter, and load-store stub per
   lane. A lane is one parallel thread position within a block.
-- `stubs.py`: the temporary idle load-store unit used until the memory path is
-  added in Stage C.
+- `stubs.py`: the temporary load-store placeholder used until the memory path
+  is added in Stage C. It raises `NotImplementedError` for `LDR` and `STR`
+  instead of silently returning zero load data.
 - `kernels.py`: binary instruction images for the bundled matrix-addition and
   matrix-multiplication examples.
 
@@ -68,7 +69,7 @@ python -m pytest -q
 ```
 
 The trace fixture and normalization tools in `test/` let the Python model be
-checked against logs produced by the Verilog design. Stage B also compares the
-first 76 cycles of the matrix-addition trace through the first data-memory
-request. Open a module beside its same-named file in `src/` to follow the
-hardware-to-Python mapping.
+checked against logs produced by the Verilog design. Stage B compares the
+matrix-addition trace through the first `LDR` request, then verifies that the
+temporary load-store unit rejects that request explicitly. Open a module beside
+its same-named file in `src/` to follow the hardware-to-Python mapping.

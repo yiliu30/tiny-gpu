@@ -41,23 +41,35 @@ def run_core_prefix(core, program, cycles):
         core.program_mem_read_ready = ready
         core.program_mem_read_data = data
         core.observe(cycle)
-        core.evaluate_clocked()
+        try:
+            core.evaluate_clocked()
+        except NotImplementedError:
+            return cycle
         core.commit()
         if cycle == 0:
             core.reset = 0
+    raise AssertionError("Stage B did not reject the first memory request")
 
 
-def test_core_matches_matadd_prefix_through_first_memory_request():
-    core = CapturingCore(threads_per_block=4)
-    core.block_id = 0
-    core.thread_count = 4
-    run_core_prefix(core, MATADD_PROGRAM, cycles=76)
-
+def test_core_matches_matadd_prefix_and_rejects_first_memory_request():
     fixture = Path(__file__).resolve().parents[2] / "test/fixtures/traces/02b6c2c/matadd/compatibility.jsonl"
     expected = [
         record
         for record in read_jsonl(fixture)
-        if record.core == 0 and record.cycle <= 75
+        if record.core == 0
     ]
+    guard_cycle = next(
+        record.cycle
+        for record in expected
+        if record.decoded.name == "LDR" and record.core_state == "REQUEST"
+    )
+
+    core = CapturingCore(threads_per_block=4)
+    core.block_id = 0
+    core.thread_count = 4
+    raised_at = run_core_prefix(core, MATADD_PROGRAM, cycles=guard_cycle + 1)
+
+    assert raised_at == guard_cycle
+    expected = [record for record in expected if record.cycle <= guard_cycle]
     compare_traces(expected, core.records)
 

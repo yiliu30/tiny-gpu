@@ -1,3 +1,5 @@
+"""Two-core test wiring for the Stage C matrix-addition compatibility check."""
+
 from __future__ import annotations
 
 from tiny_gpu.controller import Controller
@@ -6,7 +8,11 @@ from tiny_gpu.memory import ExternalMemory, MemoryResponse
 
 
 class TwoBlockDispatcher:
+    """Minimal two-core block dispatcher used until the Stage D dispatcher exists."""
+
     def __init__(self, *, thread_count=8, threads_per_block=4):
+        """Create dispatcher state for a fixed number of threads and lanes."""
+
         self.thread_count = thread_count
         self.threads_per_block = threads_per_block
         self.total_blocks = (thread_count + threads_per_block - 1) // threads_per_block
@@ -20,6 +26,8 @@ class TwoBlockDispatcher:
         self.core_thread_count = [threads_per_block, threads_per_block]
 
     def evaluate(self, *, core_done):
+        """Return the next block assignment and completion state without committing it."""
+
         start_execution = self.start_execution
         core_start = list(self.core_start)
         core_reset = list(self.core_reset)
@@ -67,6 +75,8 @@ class TwoBlockDispatcher:
         }
 
     def commit(self, outputs) -> None:
+        """Publish one evaluated dispatcher state."""
+
         self.start_execution = outputs["start_execution"]
         self.done = outputs["done"]
         self.core_start = outputs["core_start"]
@@ -78,9 +88,11 @@ class TwoBlockDispatcher:
 
 
 class TwoCoreHarness:
-    """Mirror the GPU core/controller wiring without the Stage D dispatcher."""
+    """Mirror the graphics-processor core and controller wiring for Stage C tests."""
 
     def __init__(self, *, program, data, thread_count=8):
+        """Build two cores, two controllers, external memories, and a temporary dispatcher."""
+
         self.cores = [Core(threads_per_block=4, core_index=index) for index in range(2)]
         self.dispatcher = TwoBlockDispatcher(thread_count=thread_count)
         self._sync_dispatch_outputs()
@@ -134,9 +146,13 @@ class TwoCoreHarness:
 
     @property
     def done(self) -> bool:
+        """Return whether the temporary dispatcher has completed every block."""
+
         return bool(self.dispatcher.done)
 
     def service_external_memory(self) -> None:
+        """Return responses for requests captured at the preceding clock edge."""
+
         if self._pending_program_request is None:
             self._program_response = MemoryResponse((0,), (0,), (0,))
         else:
@@ -147,15 +163,21 @@ class TwoCoreHarness:
             self._data_response = self.data_memory.service(**self._pending_data_request)
 
     def settle(self) -> None:
+        """Provide the harness settle point; all modeled values are already explicit."""
+
         return None
 
     def observe(self, cycle: int):
+        """Capture every core's lane records for one cycle."""
+
         records = []
         for core in self.cores:
             records.extend(core.observe(cycle))
         return records
 
     def evaluate_clocked(self) -> None:
+        """Evaluate every clocked component while all components still see old state."""
+
         assert self._program_response is not None
         assert self._data_response is not None
         for core in self.cores:
@@ -225,6 +247,8 @@ class TwoCoreHarness:
         ]
 
     def commit(self) -> None:
+        """Publish all staged core, controller, and dispatcher updates together."""
+
         for core in self.cores:
             core.commit()
         self.dispatcher.commit(self._staged_dispatcher)
@@ -248,6 +272,8 @@ class TwoCoreHarness:
             core.data_mem_write_ready = list(self._staged_core_write_ready[index])
 
     def _sync_dispatch_outputs(self) -> None:
+        """Copy dispatcher launch controls onto the two cores."""
+
         for index, core in enumerate(self.cores):
             core.start = self.dispatcher.core_start[index]
             core.reset = self.dispatcher.core_reset[index]

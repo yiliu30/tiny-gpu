@@ -10,6 +10,8 @@ from . import isa
 
 @dataclass
 class ControllerOutputs:
+    """Consumer and external-memory ports plus controller arbitration state."""
+
     consumer_read_ready: list[int]
     consumer_read_data: list[int]
     consumer_write_ready: list[int]
@@ -25,6 +27,8 @@ class ControllerOutputs:
 
 
 class Controller:
+    """Arbitrate several memory consumers onto one or more external channels."""
+
     def __init__(
         self,
         *,
@@ -34,6 +38,8 @@ class Controller:
         num_channels: int = 1,
         write_enable: int = 1,
     ) -> None:
+        """Create a controller with the requested consumer and channel counts."""
+
         self.address_bits = address_bits
         self.data_bits = data_bits
         self.num_consumers = num_consumers
@@ -66,6 +72,8 @@ class Controller:
         mem_read_data: Sequence[int] = (),
         mem_write_ready: Sequence[int] = (),
     ) -> ControllerOutputs:
+        """Return the next arbitration state and memory-port values without committing them."""
+
         if reset:
             return ControllerOutputs(
                 consumer_read_ready=[0] * self.num_consumers,
@@ -165,6 +173,8 @@ class Controller:
         )
 
     def commit(self, outputs: ControllerOutputs) -> None:
+        """Publish the evaluated controller outputs at a simulated clock edge."""
+
         self.consumer_read_ready = outputs.consumer_read_ready
         self.consumer_read_data = outputs.consumer_read_data
         self.consumer_write_ready = outputs.consumer_write_ready
@@ -180,5 +190,7 @@ class Controller:
 
 
 def _at(values: Sequence[int], index: int) -> int:
+    """Return an optional channel value, using zero when the index is absent."""
+
     return values[index] if index < len(values) else 0
 

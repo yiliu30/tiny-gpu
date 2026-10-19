@@ -1,4 +1,4 @@
-"""Load-store unit; mirrors ``src/lsu.sv``."""
+"""Load-store unit (LSU); mirrors ``src/lsu.sv``."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from . import isa
 
 @dataclass
 class LsuOutputs:
+    """State and memory-port values produced by one load-store unit."""
+
     state: int
     lsu_out: int
     mem_read_valid: int
@@ -19,7 +21,11 @@ class LsuOutputs:
 
 
 class Lsu:
+    """Per-lane unit that handles one data-memory load or store at a time."""
+
     def __init__(self) -> None:
+        """Create an idle load-store unit with no active memory request."""
+
         self.state = isa.LSU_IDLE
         self.lsu_out = 0
         self.mem_read_valid = 0
@@ -42,6 +48,8 @@ class Lsu:
         mem_read_data: int,
         mem_write_ready: int,
     ) -> LsuOutputs:
+        """Return the next load-store state and memory request without committing it."""
+
         if reset:
             return LsuOutputs(isa.LSU_IDLE, 0, 0, 0, 0, 0, 0)
         if not enable:
@@ -108,6 +116,8 @@ class Lsu:
         )
 
     def clock(self, **kwargs: int | bool) -> None:
+        """Commit the evaluated load-store state and memory request at a clock edge."""
+
         outputs = self.evaluate(**kwargs)
         self.state = outputs.state
         self.lsu_out = outputs.lsu_out

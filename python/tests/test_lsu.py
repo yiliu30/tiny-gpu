@@ -69,6 +69,67 @@ def test_store_request_carries_rs_and_rt():
     assert (response.state, response.mem_write_valid) == (isa.LSU_DONE, 0)
 
 
+def test_load_waits_for_multiple_cycles_before_ready():
+    lsu = Lsu()
+    advance(lsu, decoded_mem_read_enable=1)
+    request = advance(lsu, core_state=isa.CORE_WAIT, decoded_mem_read_enable=1)
+    assert (request.state, request.mem_read_valid, request.lsu_out) == (
+        isa.LSU_WAITING,
+        1,
+        0,
+    )
+
+    for _ in range(2):
+        waiting = advance(
+            lsu,
+            core_state=isa.CORE_WAIT,
+            decoded_mem_read_enable=1,
+            mem_read_ready=0,
+        )
+        assert waiting.state == isa.LSU_WAITING
+        assert waiting.mem_read_valid == 1
+        assert waiting.lsu_out == 0
+
+    response = advance(
+        lsu,
+        core_state=isa.CORE_WAIT,
+        decoded_mem_read_enable=1,
+        mem_read_ready=1,
+        mem_read_data=42,
+    )
+    assert (response.state, response.mem_read_valid, response.lsu_out) == (
+        isa.LSU_DONE,
+        0,
+        42,
+    )
+
+
+def test_store_waits_for_multiple_cycles_before_ready():
+    lsu = Lsu()
+    advance(lsu, decoded_mem_write_enable=1)
+    request = advance(lsu, core_state=isa.CORE_WAIT, decoded_mem_write_enable=1)
+    assert (request.state, request.mem_write_valid) == (isa.LSU_WAITING, 1)
+
+    for _ in range(2):
+        waiting = advance(
+            lsu,
+            core_state=isa.CORE_WAIT,
+            decoded_mem_write_enable=1,
+            mem_write_ready=0,
+        )
+        assert waiting.state == isa.LSU_WAITING
+        assert waiting.mem_write_valid == 1
+        assert (waiting.mem_write_address, waiting.mem_write_data) == (9, 7)
+
+    response = advance(
+        lsu,
+        core_state=isa.CORE_WAIT,
+        decoded_mem_write_enable=1,
+        mem_write_ready=1,
+    )
+    assert (response.state, response.mem_write_valid) == (isa.LSU_DONE, 0)
+
+
 def test_disabled_lane_holds_all_outputs():
     lsu = Lsu()
     lsu.state = isa.LSU_WAITING

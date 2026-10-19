@@ -117,21 +117,3 @@ def test_core_cmp_branch_updates_nzp_before_selecting_pc(
     assert pc_path == expected_pc_path
     assert core.registers[3].values[3] == expected_r3
 
-
-@pytest.mark.parametrize(("opcode", "name"), [(isa.OP_LDR, "LDR"), (isa.OP_STR, "STR")])
-def test_core_rejects_memory_instruction_with_idle_stage_b_lsu(opcode, name):
-    program = [
-        0b1001000100000000,  # CONST R1, #0
-        (opcode << 12) | 0b0000000100000000,
-        0b1111000000000000,  # RET
-    ]
-    core = Core(threads_per_block=4)
-    core.thread_count = 4
-    core.start = 1
-
-    with pytest.raises(NotImplementedError, match=name):
-        for _ in range(50):
-            core.program_mem_read_ready = 1
-            core.program_mem_read_data = program[core.program_mem_read_address]
-            core.evaluate_clocked()
-            core.commit()

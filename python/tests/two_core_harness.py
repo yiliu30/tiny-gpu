@@ -1,4 +1,7 @@
-"""Two-core test wiring for the Stage C matrix-addition compatibility check."""
+"""Stage-C-only two-core test scaffold; not a production model interface.
+
+Stage D replaces this wiring with ``tiny_gpu.gpu.Gpu`` and the real dispatcher.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +10,8 @@ from tiny_gpu.core import Core
 from tiny_gpu.memory import ExternalMemory, MemoryResponse
 
 
-class TwoBlockDispatcher:
-    """Minimal two-core block dispatcher used until the Stage D dispatcher exists."""
+class _TwoBlockDispatcher:
+    """Stage-C-only block dispatcher used until the real dispatcher exists."""
 
     def __init__(self, *, thread_count=8, threads_per_block=4):
         """Create dispatcher state for a fixed number of threads and lanes."""
@@ -88,13 +91,13 @@ class TwoBlockDispatcher:
 
 
 class TwoCoreHarness:
-    """Mirror the graphics-processor core and controller wiring for Stage C tests."""
+    """Stage-C-only processor wiring for the matrix-addition compatibility test."""
 
     def __init__(self, *, program, data, thread_count=8):
         """Build two cores, two controllers, external memories, and a temporary dispatcher."""
 
         self.cores = [Core(threads_per_block=4, core_index=index) for index in range(2)]
-        self.dispatcher = TwoBlockDispatcher(thread_count=thread_count)
+        self.dispatcher = _TwoBlockDispatcher(thread_count=thread_count)
         self._sync_dispatch_outputs()
 
         self.program_memory = ExternalMemory(

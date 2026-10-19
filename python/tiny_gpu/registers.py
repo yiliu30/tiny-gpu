@@ -85,4 +85,3 @@ class RegisterFile:
         self.rs = outputs.rs
         self.rt = outputs.rt
         self.values = list(outputs.values)
-

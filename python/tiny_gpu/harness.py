@@ -87,4 +87,3 @@ class SimulationHarness:
             if done_before_edge:
                 break
         return self.snapshots
-

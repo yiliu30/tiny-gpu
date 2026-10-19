@@ -111,4 +111,3 @@ def test_reset_clears_output():
         rt=1,
     )
     assert alu.alu_out == 0
-

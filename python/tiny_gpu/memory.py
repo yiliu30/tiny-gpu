@@ -91,4 +91,3 @@ def _optional(values: Sequence[int], index: int) -> int | None:
     """Return an optional per-channel value, or ``None`` when it is absent."""
 
     return values[index] if index < len(values) else None
-

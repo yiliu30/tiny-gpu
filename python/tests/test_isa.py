@@ -14,4 +14,3 @@ def test_instruction_field_split():
 
 def test_reserved_opcode_name():
     assert isa.split_instruction(0b1010000000000000).name == "UNKNOWN"
-

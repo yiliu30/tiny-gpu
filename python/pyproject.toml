@@ -22,4 +22,3 @@ include = ["tiny_gpu*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

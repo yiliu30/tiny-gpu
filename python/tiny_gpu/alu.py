@@ -78,4 +78,3 @@ class Alu:
             rs=rs,
             rt=rt,
         )
-

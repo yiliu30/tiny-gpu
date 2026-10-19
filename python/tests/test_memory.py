@@ -21,4 +21,3 @@ def test_inactive_channels_return_zero_ready_and_data():
     response = memory.service(read_valid=(1, 0), read_address=(1, 0))
     assert response.read_ready == (1, 0)
     assert response.read_data == (8, 0)
-

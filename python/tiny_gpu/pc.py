@@ -64,4 +64,3 @@ class PcUnit:
         outputs = self.evaluate(**kwargs)
         self.nzp = outputs.nzp
         self.next_pc = outputs.next_pc
-

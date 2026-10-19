@@ -142,4 +142,3 @@ def split_instruction(instruction: int) -> InstructionFields:
         nzp=(raw >> 9) & 0x7,
         immediate=raw & 0xFF,
     )
-

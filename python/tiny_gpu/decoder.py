@@ -110,4 +110,3 @@ class Decoder:
             core_state=core_state,
             instruction=instruction,
         )
-

@@ -269,4 +269,3 @@ def compare_traces(
                         actual_fields[name],
                     )
                 )
-

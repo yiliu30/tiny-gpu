@@ -59,4 +59,3 @@ def test_read_only_registers_ignore_writes_but_block_id_tracks_dispatcher():
         immediate=123,
     )
     assert registers.values[13:] == [5, 4, 3]
-

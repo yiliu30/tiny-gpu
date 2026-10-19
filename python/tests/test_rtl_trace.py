@@ -60,4 +60,3 @@ def test_missing_raw_instruction_bits_is_an_error(tmp_path):
         assert "Instruction Bits" in str(error)
     else:
         raise AssertionError("expected missing Instruction Bits to fail")
-

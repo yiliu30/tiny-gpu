@@ -145,4 +145,3 @@ def test_decoder_only_updates_in_decode_and_holds_otherwise():
     decoded = decoder.outputs.copy()
     decoder.clock(reset=False, core_state=isa.CORE_REQUEST, instruction=isa.OP_RET << 12)
     assert decoder.outputs == decoded
-

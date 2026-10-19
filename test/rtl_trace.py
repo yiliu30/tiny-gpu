@@ -81,4 +81,3 @@ def records_from_log(path: Path) -> list[TraceRecord]:
     if not records:
         raise ValueError(f"{path}: no lane records found")
     return records
-

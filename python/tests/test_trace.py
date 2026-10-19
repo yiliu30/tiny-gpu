@@ -88,4 +88,3 @@ def test_strict_comparison_rejects_unexpected_actual_field():
     assert divergence.kind == "field"
     assert divergence.field == "unexpected"
     assert (divergence.expected, divergence.actual) == ("<missing>", 1)
-

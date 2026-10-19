@@ -81,4 +81,3 @@ def test_custom_observer_receives_harness_cycle():
 
     assert observed_cycles == [0, 1]
     assert harness.snapshots == [(0,), (1,)]
-

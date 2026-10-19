@@ -43,4 +43,3 @@ def test_reset_clears_nzp_and_next_pc():
     pc.next_pc = 33
     reset_state = _evaluate(pc, reset=True)
     assert (reset_state.nzp, reset_state.next_pc) == (0, 0)
-

@@ -27,4 +27,3 @@ def test_matadd_first_fetch_cycle_matches_rtl_fixture():
     records = read_jsonl(FIXTURE_ROOT / "matadd" / "compatibility.jsonl")
     first_fetch = min(record.cycle for record in records if record.core_state == "FETCH")
     assert first_fetch == 2
-

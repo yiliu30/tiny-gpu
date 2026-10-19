@@ -55,4 +55,3 @@ python -m pytest -q
 The trace fixture and normalization tools in `test/` let the Python model be
 checked against logs produced by the Verilog design. Open a module beside its
 same-named file in `src/` to follow the hardware-to-Python mapping.
-

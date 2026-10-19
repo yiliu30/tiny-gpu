@@ -76,4 +76,3 @@ class Fetcher:
         self.mem_read_valid = outputs.mem_read_valid
         self.mem_read_address = outputs.mem_read_address
         self.instruction = outputs.instruction
-

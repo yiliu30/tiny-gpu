@@ -56,4 +56,3 @@ def test_fetched_to_idle_on_decode_edge():
         mem_read_data=0,
     )
     assert output.state == isa.FETCHER_IDLE
-

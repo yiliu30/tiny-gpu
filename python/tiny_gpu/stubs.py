@@ -72,4 +72,3 @@ class IdleLsu:
         self.mem_write_valid = outputs.mem_write_valid
         self.mem_write_address = outputs.mem_write_address
         self.mem_write_data = outputs.mem_write_data
-

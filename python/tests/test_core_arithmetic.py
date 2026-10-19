@@ -135,4 +135,3 @@ def test_core_rejects_memory_instruction_with_idle_stage_b_lsu(opcode, name):
             core.program_mem_read_data = program[core.program_mem_read_address]
             core.evaluate_clocked()
             core.commit()
-

@@ -295,4 +295,3 @@ class Core:
                 )
             )
         return records
-

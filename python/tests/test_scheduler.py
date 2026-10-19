@@ -48,4 +48,3 @@ def test_update_uses_last_lane_next_pc_even_if_lane_is_inactive():
     scheduler.core_state = isa.CORE_UPDATE
     output = evaluate(scheduler, next_pc=[40, 41, 42, 43])
     assert output.current_pc == 43
-

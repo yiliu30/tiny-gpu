@@ -72,4 +72,3 @@ def test_core_matches_matadd_prefix_and_rejects_first_memory_request():
     assert raised_at == guard_cycle
     expected = [record for record in expected if record.cycle <= guard_cycle]
     compare_traces(expected, core.records)
-

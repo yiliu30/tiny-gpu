@@ -86,4 +86,3 @@ class Scheduler:
         self.current_pc = outputs.current_pc
         self.core_state = outputs.core_state
         self.done = outputs.done
-

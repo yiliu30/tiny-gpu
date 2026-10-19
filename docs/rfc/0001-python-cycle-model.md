@@ -1,18 +1,22 @@
 # RFC 0001: Cycle-Accurate Python Model for tiny-gpu
 
-- **Status:** Draft
+- **Status:** Proposed
+- **Revision:** 2 (review feedback from #3 incorporated)
 - **Author:** @yiliu30
 - **Created:** 2026-10-18
+- **Updated:** 2026-10-19
 - **Reference RTL:** `02b6c2c`
-- **Discussion:** This pull request
+- **Discussion:** #3
+- **Draft PR:** #2
 
 ## Summary
 
 Add a standalone Python implementation of tiny-gpu that models the existing RTL
-one clock cycle at a time. The primary success criterion is not merely producing
-the same matadd/matmul results, but producing the same normalized execution trace
-as the Verilog tests: the same instructions, pipeline stages, LSU states, PCs,
-register values, and completion cycle.
+one clock cycle at a time. The model keeps a one-to-one file mapping with
+`src/*.sv` so the Python and Verilog implementations can be studied side by
+side. Functional results alone are not sufficient: the model must reproduce a
+normalized execution trace containing the same instructions, pipeline stages,
+LSU states, PCs, register values, and completion timing as the RTL.
 
 The Python model is a learning and verification tool. It is not synthesizable
 hardware and does not replace the RTL implementation.
@@ -27,21 +31,25 @@ handshakes still requires hardware intuition. A Python model can:
 - Provide a deterministic, inspectable reference for every cycle.
 - Allow experiments with scheduling and memory behavior without editing RTL.
 - Serve as a golden model when the Verilog implementation changes.
-- Reuse the existing textual, VCD, and Perfetto trace tooling.
+- Reuse and extend the existing textual, VCD, and Perfetto trace tooling.
 
-The key constraint is cycle accuracy. A high-level GPU emulator would be easier
-to write, but it would not answer the questions this project is intended to
-teach.
+The model should also become a bridge to reading the Verilog later. Therefore,
+module names, state names, and observable signal names must remain aligned with
+the RTL rather than being collapsed into a shorter, Python-specific design.
 
 ## Goals
 
-1. Reproduce the matadd and matmul final data-memory results.
-2. Reproduce their normalized Verilog traces cycle for cycle.
+1. Reproduce matadd and matmul final data-memory results.
+2. Reproduce normalized RTL traces cycle for cycle at two levels of coverage:
+   compatibility parity against existing logs, then full architectural parity
+   against opt-in unfiltered RTL traces.
 3. Keep the implementation deterministic and single-threaded.
-4. Preserve the RTL's module boundaries so the two implementations can be read
-   side by side.
-5. Make trace comparison and mismatch diagnosis first-class features.
-6. Emit a canonical trace that can be rendered as text, VCD, or Perfetto JSON.
+4. Preserve a one-to-one module layout with `src/*.sv` for learning and review.
+5. Make first-divergence trace diagnosis a first-class feature.
+6. Emit one canonical trace representation that can be rendered as text, VCD,
+   or Perfetto JSON.
+7. Reproduce pinned RTL behavior, including known quirks, instead of silently
+   correcting it.
 
 ## Non-Goals
 
@@ -52,6 +60,7 @@ teach.
 - Byte-for-byte equality with Verilog log formatting.
 - Adding caches, pipelining, branch divergence, or new ISA instructions.
 - Replacing cocotb or the existing RTL regression tests.
+- Changing RTL behavior in the Python compatibility profile.
 
 ## Reference Behavior
 
@@ -73,144 +82,247 @@ The reference runs use the default configuration:
 - 1 program-memory channel
 - 4 data-memory channels
 
-Observed baselines:
+Pinned baselines:
 
-| Kernel | Threads | Blocks | Logged lanes | Completion |
+| Kernel | Threads | Blocks | Captured lanes | Completion |
 | --- | ---: | ---: | ---: | ---: |
 | matadd | 8 | 2 | 8 | 178 cycles |
 | matmul | 4 | 1 | 1 (`thread_id=1` filter) | 491 cycles |
 
-The matmul logger intentionally filters to one lane, so the comparator must
-compare only records present in the golden trace rather than assuming every
-lane appears in every run.
+These cycle counts and lane counts are regression baselines for this pinned RTL
+configuration, not universal architectural constants.
 
-### Trace Sampling Point
+### Parity Profiles
 
-The cocotb tests service external memory, wait for `ReadOnly`, capture the trace,
-and then wait for the next rising edge. Cycle 0 is therefore captured while the
-cores are still `IDLE`, before the first edge that observes `start`.
+Trace verification uses two levels:
 
-The Python model must expose the same observation phase:
+1. **Compatibility parity:** compare every field emitted by the existing test
+   logs. This is the first implementation checkpoint.
+2. **Full architectural parity:** add an opt-in unfiltered RTL trace that emits
+   every enabled lane plus the relevant controller and memory signals. This is
+   required before claiming full-lane parity because the current matmul log
+   captures only global thread 1.
 
-1. Service external memory from the current request signals.
-2. Settle combinational values.
-3. Capture the trace snapshot.
-4. Commit all state transitions for the rising edge.
+The compatibility profile must not silently ignore fields or records. Missing
+and unexpected records are comparison failures.
 
-This ordering must be explicit and tested. Sampling before or after the edge
-would shift the entire trace by one cycle.
+## Simulation and Observation Contract
+
+The cocotb tests establish the observation point. For each iteration they:
+
+1. Service external program and data memory.
+2. Wait for `ReadOnly`, allowing combinational signals to settle.
+3. Capture the trace.
+4. Wait for the next rising edge.
+
+Cycle 0 is therefore captured while the cores are still `IDLE`, before the first
+edge that observes `start`.
+
+The Python model must expose the same sequence explicitly:
+
+```python
+model.initialize(
+    program=program,
+    data=data,
+    thread_count=8,
+)
+model.assert_start()
+
+cycle = 0
+while not model.done:
+    model.service_external_memory()  # testbench memory.response(), including writes
+    model.settle_comb()              # equivalent to the ReadOnly settling point
+    trace.capture(model.observe(cycle))
+    model.commit_rising_edge()
+    cycle += 1
+```
+
+Initialization must also match the cocotb setup sequence: reset for one rising
+edge, load memories, write the DCR for one rising edge, deassert the DCR write,
+then assert `start`.
+
+The observation contract requires dedicated tests for:
+
+- Cycle 0 showing `IDLE` rather than `FETCH`.
+- The first `FETCH` appearing one cycle later.
+- Sampling immediately before and after each rising edge.
+- Memory response and write visibility at the same boundary as cocotb.
+
+### Blocking and Nonblocking Semantics
+
+A globally deferred `next_state` object is insufficient because the RTL uses
+both nonblocking and blocking assignments. Each module must evaluate its clocked
+process in source order:
+
+- Nonblocking assignments are staged in a module-local next-state object.
+- Blocking assignments take effect immediately for later statements in that
+  process and must be visible where the RTL depends on them.
+- Staged nonblocking values from all modules are committed simultaneously after
+  every module has evaluated the edge.
+
+This is especially important in `controller.sv`, where the blocking update to
+`channel_serving_consumer` prevents another channel from selecting the same
+consumer during the same evaluation.
 
 ## Proposed Design
 
 ### Package Layout
 
+Hardware-model modules mirror `src/*.sv` exactly:
+
 ```text
 python/
   tiny_gpu/
     __init__.py
-    isa.py
-    decoder.py
-    alu.py
-    registers.py
-    lsu.py
-    pc.py
-    fetcher.py
-    scheduler.py
-    core.py
-    dispatcher.py
-    controller.py
-    memory.py
-    gpu.py
-    trace.py
-    cli.py
+    gpu.py           # src/gpu.sv
+    dcr.py           # src/dcr.sv
+    dispatch.py      # src/dispatch.sv
+    core.py          # src/core.sv
+    scheduler.py     # src/scheduler.sv
+    fetcher.py       # src/fetcher.sv
+    decoder.py       # src/decoder.sv
+    registers.py     # src/registers.sv
+    alu.py           # src/alu.sv
+    lsu.py           # src/lsu.sv
+    pc.py            # src/pc.sv
+    controller.py    # src/controller.sv
+
+    isa.py           # support: encoding constants and shared field helpers
+    memory.py        # support: external program/data memory testbench model
+    trace.py         # support: snapshots, normalization, serializers, diffing
+    cli.py           # support: command-line runner
   tests/
-    test_isa.py
+    test_decoder.py
+    test_registers.py
     test_alu.py
+    test_pc.py
+    test_fetcher.py
+    test_lsu.py
+    test_scheduler.py
+    test_controller.py
     test_core.py
+    test_dcr.py
+    test_dispatch.py
+    test_gpu.py
     test_matadd.py
     test_matmul.py
+    test_partial_block.py
     test_trace_parity.py
 ```
 
-The module names intentionally mirror `src/*.sv` to keep review and debugging
-straightforward.
+Support files have no RTL counterpart and must not hide hardware behavior. All
+observable fields and state enums retain their RTL names, including
+`core_state`, `fetcher_state`, `lsu_state`, `current_pc`, and `next_pc`.
 
-### Simulation Loop
+### Verilog-First Learning Path
 
-The simulator is a synchronous, cycle-driven state machine. It should not use
-asyncio, coroutines, or threads.
+The implementation order follows the RTL from leaf modules to the full GPU:
 
-```python
-while not gpu.done:
-    gpu.settle_comb()
-    trace.capture(gpu.snapshot(cycle))
-    gpu.commit_rising_edge()
-    cycle += 1
-```
+| Order | Python / Verilog pair | Learning focus |
+| ---: | --- | --- |
+| 1 | `decoder.py` / `src/decoder.sv` | Opcode fields to control signals |
+| 2 | `alu.py` / `src/alu.sv` | Arithmetic, CMP, NZP output |
+| 3 | `registers.py` / `src/registers.sv` | Lane-local registers and read-only IDs |
+| 4 | `pc.py` / `src/pc.sv` | Sequential PC and branch selection |
+| 5 | `fetcher.py` / `src/fetcher.sv` | Async instruction fetch handshake |
+| 6 | `lsu.py` / `src/lsu.sv` | Async load/store states |
+| 7 | `scheduler.py` / `src/scheduler.sv` | Six-stage execution loop |
+| 8 | `core.py` / `src/core.sv` | Shared control with replicated lanes |
+| 9 | `controller.py` / `src/controller.sv` | Consumer/channel arbitration |
+| 10 | `dcr.py` / `src/dcr.sv` | Kernel thread-count register |
+| 11 | `dispatch.py` / `src/dispatch.sv` | Block distribution and completion |
+| 12 | `gpu.py` / `src/gpu.sv` | Top-level wiring and memory channels |
 
-Every sequential component exposes two operations:
-
-- `settle_comb()` computes outputs and next-state values from current state.
-- `commit_rising_edge()` copies next-state values into current state.
-
-This two-phase model mirrors Verilog nonblocking assignments and avoids behavior
-that depends on Python object-update order.
+Each Python module should link to its RTL counterpart in its module docstring.
+The goal is side-by-side reading, not merely behavioral similarity.
 
 ### Component Mapping
 
-| RTL module | Python responsibility |
-| --- | --- |
-| `gpu` | Own DCR, dispatcher, cores, and controllers |
-| `dcr` | Hold `thread_count` |
-| `dispatch` | Partition threads into blocks and schedule idle cores |
-| `core` | Own one scheduler and four lane datapaths |
-| `scheduler` | Sequence FETCH through UPDATE and signal completion |
-| `fetcher` | Implement IDLE, FETCHING, and FETCHED |
-| `decoder` | Decode opcode and control fields into a control bundle |
-| `registers` | Hold 13 writable and 3 read-only 8-bit registers per lane |
-| `alu` | Implement arithmetic and CMP with fixed-width semantics |
-| `lsu` | Implement valid/ready memory requests and wait states |
-| `pc` | Compute `next_pc` and condition state per lane |
-| `controller` | Multiplex consumers onto external memory channels |
+| RTL source | Python module | Responsibility |
+| --- | --- | --- |
+| `src/gpu.sv` | `gpu.py` | Wire DCR, dispatcher, cores, and controllers |
+| `src/dcr.sv` | `dcr.py` | Hold `thread_count` |
+| `src/dispatch.sv` | `dispatch.py` | Partition threads into blocks and feed idle cores |
+| `src/core.sv` | `core.py` | Own one scheduler and four lane datapaths |
+| `src/scheduler.sv` | `scheduler.py` | Sequence FETCH through UPDATE and signal completion |
+| `src/fetcher.sv` | `fetcher.py` | Implement IDLE, FETCHING, and FETCHED |
+| `src/decoder.sv` | `decoder.py` | Decode opcode and fields into a control bundle |
+| `src/registers.sv` | `registers.py` | 13 writable and 3 read-only 8-bit registers per lane |
+| `src/alu.sv` | `alu.py` | Arithmetic and CMP with fixed-width semantics |
+| `src/lsu.sv` | `lsu.py` | Valid/ready memory requests and wait states |
+| `src/pc.sv` | `pc.py` | Compute `next_pc` and NZP per lane |
+| `src/controller.sv` | `controller.py` | Multiplex consumers onto external memory channels |
 
-### Integer and Signal Semantics
+### Integer and Lane Semantics
 
 - Register and ALU data values are unsigned 8-bit integers.
 - Program addresses are 8-bit; instructions are 16-bit.
-- Arithmetic results must be truncated to 8 bits explicitly.
-- `thread_count`, block IDs, and block sizes retain the RTL's bit widths.
-- The scheduler advances using the last lane's `next_pc`, matching the RTL's
-  convergence assumption.
-- Only registers R0-R12 are writable.
+- Arithmetic results are truncated to 8 bits explicitly.
+- `thread_count`, block IDs, and block sizes retain the RTL bit widths.
+- Only R0-R12 are writable.
 - R13, R14, and R15 expose `%blockIdx`, `%blockDim`, and `%threadIdx`.
+- All active lanes execute in lockstep under one shared decoded control bundle.
+
+### RTL Compatibility Quirks
+
+The compatibility profile must reproduce the pinned RTL, including behavior that
+may later be identified as a bug.
+
+Known issue to preserve and investigate:
+
+- `scheduler.sv` advances using `next_pc[THREADS_PER_BLOCK-1]`.
+- `core.sv` disables a lane's PC when `i >= thread_count`.
+- In a partially filled final block, the scheduler can therefore observe a
+  stale `next_pc` from an inactive lane.
+
+The Python implementation must not silently fix this. It needs a bounded
+end-to-end partial-block test, such as a final block containing one active lane.
+If the behavior is confirmed as an RTL defect, track and fix it in a separate
+RTL issue before changing the compatibility profile.
 
 ### Memory and Controller Timing
 
-The Python memory service must reproduce the testbench behavior used by the
-golden traces:
+The Python memory service reproduces the testbench behavior used by the golden
+traces:
 
 - A read or write with `valid=1` receives `ready=1` in the same simulated cycle.
 - Reads return data immediately in that cycle.
 - Writes update data memory immediately in that cycle.
-- The data controller serves four channels and accepts one consumer per channel.
-- Consumer scanning is deterministic and starts at index 0 every cycle.
-- A read request is preferred over a write request when both are visible.
-- A consumer remains owned by a channel until its request is deasserted.
 
-The zero-latency external-memory behavior can later be made configurable for
-experiments, but the parity profile must preserve the behavior above.
+Controller arbitration must match `controller.sv` exactly:
+
+- Each idle channel scans consumers in ascending index order.
+- For each consumer, read is checked before write. This is not a global
+  read-over-write priority: consumer 0's write can win over consumer 1's read.
+- The first eligible consumer wins for that channel.
+- `channel_serving_consumer` uses blocking semantics, so another channel cannot
+  select the same consumer during the same clock evaluation.
+- The consumer remains owned until its request deasserts and the channel returns
+  to `IDLE`.
+
+Directed tests must cover simultaneous consumers, mixed reads and writes,
+multi-channel ownership, ready/data relay timing, and valid/ready deassertion.
 
 ### Canonical Trace
 
-Both the RTL and Python simulators should feed the same normalized record schema:
+Both simulators feed one normalized record schema. Raw instruction fields are
+authoritative; formatted assembly is diagnostic only.
 
 ```json
 {
   "cycle": 100,
   "core": 0,
   "lane": 0,
+  "global_thread": 0,
   "pc": 8,
-  "instruction": "ADD R5, R2, R0",
+  "instruction_bits": 3376,
+  "opcode": "ADD",
+  "rd": 5,
+  "rs_address": 2,
+  "rt_address": 0,
+  "immediate": 0,
+  "branch_mask": 0,
+  "instruction_text": "ADD R5, R2, R0",
   "core_state": "FETCH",
   "fetcher_state": "FETCHING",
   "lsu_state": "IDLE",
@@ -218,75 +330,125 @@ Both the RTL and Python simulators should feed the same normalized record schema
   "rs": 8,
   "rt": 0,
   "alu_out": 8,
+  "lsu_out": 0,
+  "constant": 0,
   "core_done": 0
 }
 ```
 
-Nested `registers` may be flattened for a concrete serializer, but the
-normalized comparison model should retain named registers.
+The parser must capture every field emitted by the logger, including optional
+`LSU Out` and `Constant` values. `instruction_text` must not be used as the
+equality oracle: `test/helpers/format.py` currently mishandles branch-condition
+formatting, so the normalizer must decode the raw 16-bit instruction and control
+fields independently.
 
-The canonical trace should be the only representation consumed by the text,
-VCD, and Perfetto writers. This avoids implementing architecture-specific logic
-three times.
+The text, VCD, and Perfetto writers consume only the canonical trace model.
 
 ## Verification Strategy
 
 ### Unit Tests
 
 - Decode all 11 instructions and reserved encodings.
-- Verify ALU arithmetic, CMP, and 8-bit truncation.
-- Verify special-register behavior.
-- Verify fetcher, LSU, and scheduler state transitions.
-- Verify dispatcher block counts and final partial blocks.
+- Verify ALU arithmetic, CMP, branch conditions, and 8-bit overflow.
+- Verify register writes and read-only special registers.
+- Verify fetcher, LSU, scheduler, and controller state transitions.
+- Verify DCR writes, dispatcher block counts, and partial final blocks.
+- Verify reset and first-edge behavior.
 
 ### Golden Trace Comparison
 
 The parity tool will:
 
-1. Read a Verilog log using the existing log parser.
-2. Run the Python model with the same program, data, and thread count.
+1. Read a Verilog trace and normalize every emitted field.
+2. Run the Python model with identical program, data, thread count, and
+   initialization sequence.
 3. Normalize both traces into the canonical record schema.
-4. Compare records by `(cycle, core, lane)`.
-5. Report the first mismatching field with expected and actual values.
+4. Compare record sets by `(cycle, core, lane)`, reporting missing and
+   unexpected records.
+5. Report the first divergent cycle and the first mismatching field with
+   expected and actual values.
 
 Formatting, whitespace, table borders, and source paths are ignored.
+
+### Reproducible Fixtures
+
+Normalized fixtures are version-controlled under:
+
+```text
+test/fixtures/traces/02b6c2c/
+  manifest.json
+  matadd/compatibility.jsonl
+  matadd/full.jsonl
+  matmul/compatibility.jsonl
+  matmul/full.jsonl
+```
+
+`test/generate_trace_fixtures.py` regenerates them from RTL logs. The manifest
+records:
+
+- RTL commit
+- Icarus Verilog version
+- cocotb and Python versions
+- GPU configuration parameters
+- Program and data-memory hashes
+- Trace mode and observation phase
+- Completion cycle
+
+Full-lane fixtures require the opt-in unfiltered RTL trace. Smaller
+compatibility fixtures remain useful for fast local runs, while full fixtures
+are the stronger validation target.
 
 ### Acceptance Criteria
 
 - matadd final data memory matches the Verilog result.
-- matadd normalized traces match for every logged record.
-- matadd completion cycle is 178.
+- matadd compatibility trace matches all logged fields and completion cycle 178.
 - matmul final data memory matches the Verilog result.
-- matmul normalized traces match for every logged record.
-- matmul completion cycle is 491.
-- All Python unit tests pass without requiring Icarus Verilog or cocotb.
+- matmul compatibility trace matches all logged fields and completion cycle 491.
+- Opt-in full-lane traces match every enabled lane for both kernels.
+- Cycle 0, first fetch, reset/launch boundaries, and edge observation are tested.
+- Simultaneous multi-core and multi-channel contention tests pass.
+- Partial-block behavior matches the pinned RTL compatibility profile.
+- Fixed-width overflow, CMP/branch conditions, and reserved encodings are tested.
+- All Python unit tests run without Icarus Verilog or cocotb.
+- Differential RTL-vs-Python tests run in CI when Icarus and cocotb are available.
+- The RTL-compatible profile is isolated from later configurable experiments.
 
 ## Implementation Milestones
 
-1. **ISA and scalar pieces:** decoder, ALU, register file, PC, and unit tests.
-2. **Single core control:** fetcher, scheduler, lane orchestration, and the six
-   execution stages using program/data memory stubs.
-3. **Memory path:** LSUs, memory controllers, zero-latency external memory, and
-   matadd parity.
-4. **Full GPU:** DCR, dispatcher, two cores, matmul parity, and completion timing.
-5. **Trace tooling:** canonical trace serializer, comparator, VCD output, and
-   Perfetto output.
-6. **Documentation:** side-by-side RTL/Python map and a short usage guide.
+1. **Module-aligned skeleton:** create one Python module per RTL source file and
+   implement ISA, decoder, ALU, registers, and PC with unit tests.
+2. **Event contract:** implement the settle/capture/edge sequence and prove cycle
+   0 plus the first state transitions against the golden trace.
+3. **Single core:** fetcher, LSU, scheduler, core wiring, and four-lane lockstep
+   execution.
+4. **Memory system:** external memory, controller arbitration, and directed
+   contention tests.
+5. **Full GPU:** DCR, dispatcher, two cores, partial-block compatibility, and
+   matadd/matmul functional results.
+6. **Compatibility parity:** complete 178-cycle matadd and 491-cycle matmul trace
+   comparisons.
+7. **Full-lane parity:** add unfiltered RTL traces, full fixtures, and complete
+   all enabled-lane comparisons.
+8. **Tooling and docs:** canonical trace writers, fixture regeneration, and the
+   side-by-side RTL/Python learning guide.
 
-The first reviewable checkpoint is matching matadd through the full 178-cycle
-trace. Partial functional parity alone is not sufficient.
+The first reviewable implementation checkpoint remains a complete matadd
+compatibility-trace match. Functional parity alone is not sufficient.
 
 ## Risks and Mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| Trace sampled at the wrong phase shifts all cycles | Lock the observer phase with dedicated first-cycle and edge-boundary tests |
-| Python update ordering changes behavior | Require two-phase combinational settle and edge commit |
-| Controller arbitration differs | Port scan order and ownership rules directly; test multi-lane memory access |
-| Hidden reset or dispatch timing differs | Match cycle 0 and first block assignment before optimizing code |
-| Integer overflow differs from Verilog | Centralize width truncation helpers and test boundaries |
-| Exact-trace tests are brittle if RTL evolves | Pin golden traces to a commit and store normalized fixtures |
-| Model and RTL drift apart | Keep module boundaries aligned and compare traces in CI when tools are available |
+| Trace sampled at the wrong phase shifts all cycles | Lock observation phase; test cycle 0 and edge boundaries |
+| Global next-state update erases blocking-assignment behavior | Preserve per-process statement order; stage only nonblocking assignments |
+| Controller arbitration differs | Port ascending scan, per-consumer read-before-write, and shared blocking ownership |
+| Partial-block behavior is accidentally "fixed" | Reproduce pinned behavior; add end-to-end test; track possible RTL bug separately |
+| Log parser omits optional fields | Compare every emitted field and fail on missing/unexpected records |
+| Formatted assembly hides branch semantics | Decode raw instruction bits and compare decoded fields |
+| Matmul log covers only one lane | Add opt-in full-lane RTL trace and separate compatibility/full profiles |
+| Python update ordering changes behavior | Commit staged nonblocking state simultaneously across modules |
+| Exact-trace tests are brittle if RTL evolves | Pin commit, simulator versions, configuration, and normalized fixtures |
+| Model and RTL drift apart | Keep one-to-one module layout and run differential tests when tools are available |
 
 ## Alternatives Considered
 
@@ -297,38 +459,35 @@ provide an independent, easily instrumented model.
 
 ### High-Level Python Emulator
 
-A simple functional emulator can compute matadd and matmul, but it cannot answer
-questions about scheduler stages, memory stalls, or lane replication. It is
-useful as a separate educational layer but does not satisfy trace parity.
+A functional emulator can compute matadd and matmul, but it cannot answer
+questions about scheduler stages, memory stalls, lane replication, or trace
+timing. It does not satisfy this RFC.
 
 ### Python HDL (Amaranth or MyHDL)
 
-These can generate synthesizable hardware, but they introduce a different set of
-hardware-design concepts and dependencies. They are a good follow-up option for
-users interested in FPGA deployment, not the smallest next step for this RFC.
+These can generate synthesizable hardware, but they introduce additional
+hardware-design concepts and dependencies. They are a follow-up option for FPGA
+work, not the smallest next step for this RFC.
 
 ### Compare Against a Simulator-Generated VCD Instead of Text Logs
 
-A full RTL VCD would provide more signals and expose controller internals.
-However, it is much larger and less stable than the normalized architectural
-trace. It can be added later as deeper verification.
+A full RTL VCD exposes more internal signals but is much larger and less stable
+than normalized architectural fixtures. It can be used as an additional deep
+verification mode after the trace contract is established.
 
 ## Open Questions
 
-1. Should the Python package live in the main fork only, or should this RFC also
-   target an upstream contribution?
-2. Should exact parity cover only the two bundled kernels, or should randomized
-   programs also be compared against the RTL?
-3. Should the canonical trace be JSON-first, or should a compact in-memory
-   record remain authoritative with JSON only as a serialization format?
-4. Where should golden trace fixtures live, given that current timestamped logs
-   are ignored by Git?
-5. Should the model expose a stable public API, or remain an internal learning
-   simulator with no compatibility guarantees?
+1. Should this RFC and the Python package target the fork only, or should they
+   also be proposed upstream?
+2. Should randomized differential testing against the RTL be part of the initial
+   scope, or a follow-up after the bundled kernels reach full-lane parity?
+3. Should full-lane fixtures be mandatory in every CI run or gated behind a
+   slower optional job?
 
 ## Decision
 
-This document proposes a cycle-accurate Python model with normalized trace
-parity as the primary correctness target. Comments are requested on the package
-layout, canonical trace schema, exact-parity scope, and fixture strategy before
-implementation begins.
+Adopt the module-aligned, cycle-accurate Python model with explicit pre-edge
+observation, compatibility and full-lane parity profiles, and versioned golden
+fixtures. The Python compatibility profile must reproduce pinned RTL behavior
+without silently correcting it. Implementation begins after this revision is
+accepted.

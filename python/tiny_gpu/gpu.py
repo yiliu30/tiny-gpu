@@ -8,12 +8,25 @@ from .controller import Controller
 from .core import Core
 from .dcr import Dcr
 from .dispatch import Dispatch
+from .harness import SimulationHarness
 from .memory import ExternalMemory, MemoryResponse
 from .trace import TraceRecord
 
 
+PINNED_CONFIGURATION = {
+    "data_mem_addr_bits": 8,
+    "data_mem_data_bits": 8,
+    "data_mem_num_channels": 4,
+    "program_mem_addr_bits": 8,
+    "program_mem_data_bits": 16,
+    "program_mem_num_channels": 1,
+    "num_cores": 2,
+    "threads_per_block": 4,
+}
+
+
 class Gpu:
-    """Top-level graphics processor wiring for memory, control, cores, and dispatch."""
+    """Top-level processor wiring for the pinned two-core compatibility profile."""
 
     def __init__(
         self,
@@ -28,6 +41,19 @@ class Gpu:
         threads_per_block: int = 4,
     ) -> None:
         """Create the device control register, dispatcher, controllers, memories, and cores."""
+
+        _validate_pinned_configuration(
+            {
+                "data_mem_addr_bits": data_mem_addr_bits,
+                "data_mem_data_bits": data_mem_data_bits,
+                "data_mem_num_channels": data_mem_num_channels,
+                "program_mem_addr_bits": program_mem_addr_bits,
+                "program_mem_data_bits": program_mem_data_bits,
+                "program_mem_num_channels": program_mem_num_channels,
+                "num_cores": num_cores,
+                "threads_per_block": threads_per_block,
+            }
+        )
 
         self.data_mem_addr_bits = data_mem_addr_bits
         self.data_mem_data_bits = data_mem_data_bits
@@ -276,24 +302,21 @@ class Gpu:
             core.data_mem_read_data = list(self._staged_core_read_data[index])
             core.data_mem_write_ready = list(self._staged_core_write_ready[index])
 
-    def run_until_testbench_done(self, *, max_cycles: int = 100_000):
-        """Run with the testbench observation order and return records plus cycle count."""
+    def run_until_testbench_done(
+        self,
+        *,
+        max_cycles: int = 100_000,
+        compatibility: bool = True,
+    ) -> tuple[list[TraceRecord], int]:
+        """Run through the shared harness and return flattened records plus cycle count."""
 
-        records: list[TraceRecord] = []
-        cycle = 0
-        done_visible = False
-        while not done_visible:
-            done_before_edge = bool(self.done)
-            self.service_external_memory()
-            self.settle()
-            records.extend(self.observe(cycle))
-            self.evaluate_clocked()
-            self.commit()
-            done_visible = done_before_edge
-            cycle += 1
-            if cycle > max_cycles:
-                raise RuntimeError(f"simulation exceeded {max_cycles} cycles")
-        return records, cycle
+        simulation = SimulationHarness(
+            self,
+            observe=lambda cycle: self.observe(cycle, compatibility=compatibility),
+        )
+        snapshots = simulation.run_until_done(max_cycles=max_cycles)
+        records = [record for snapshot in snapshots for record in snapshot]
+        return records, simulation.cycle
 
     def _sync_dispatch_outputs(self) -> None:
         """Copy dispatcher launch controls onto the compute cores."""
@@ -309,4 +332,16 @@ def _zero_response(channels: int) -> MemoryResponse:
     """Return an all-inactive response for every external-memory channel."""
 
     return MemoryResponse((0,) * channels, (0,) * channels, (0,) * channels)
+
+
+def _validate_pinned_configuration(configuration: dict[str, int]) -> None:
+    """Reject configuration values that the pinned datapath does not model."""
+
+    mismatches = [
+        f"{name}={value} (pinned value is {PINNED_CONFIGURATION[name]})"
+        for name, value in configuration.items()
+        if value != PINNED_CONFIGURATION[name]
+    ]
+    if mismatches:
+        raise ValueError("unsupported Gpu configuration: " + "; ".join(mismatches))
 

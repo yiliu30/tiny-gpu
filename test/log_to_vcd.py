@@ -30,6 +30,8 @@ class ThreadSnapshot:
     rs: Optional[int] = None
     rt: Optional[int] = None
     alu_out: Optional[int] = None
+    lsu_out: Optional[int] = None
+    constant: Optional[int] = None
 
 
 @dataclass
@@ -38,6 +40,7 @@ class CoreSnapshot:
     state: Optional[str] = None
     fetcher_state: Optional[str] = None
     instruction: Optional[str] = None
+    instruction_bits: Optional[int] = None
     instruction_text: Optional[str] = None
     pc: Optional[int] = None
     done: Optional[int] = None
@@ -109,6 +112,8 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
         elif line.startswith("Instruction: "):
             core.instruction_text = line.removeprefix("Instruction: ")
             core.instruction = core.instruction_text.split()[0]
+        elif line.startswith("Instruction Bits: "):
+            core.instruction_bits = int(line.removeprefix("Instruction Bits: "), 2)
         elif line.startswith("Core State: "):
             core.state = line.removeprefix("Core State: ")
         elif line.startswith("Fetcher State: "):
@@ -131,6 +136,10 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
             thread.rt = int(rt)
         elif thread is not None and line.startswith("ALU Out: "):
             thread.alu_out = int(line.removeprefix("ALU Out: "))
+        elif thread is not None and line.startswith("LSU Out: "):
+            thread.lsu_out = int(line.removeprefix("LSU Out: "))
+        elif thread is not None and line.startswith("Constant: "):
+            thread.constant = int(line.removeprefix("Constant: "))
 
     if not cycles:
         raise ValueError(f"{path}: no cycle records found")

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Generate deterministic canonical trace fixtures from RTL text logs."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PYTHON_ROOT = REPO_ROOT / "python"
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
+
+try:
+    from .rtl_trace import records_from_log
+except ImportError:
+    from rtl_trace import records_from_log
+
+from tiny_gpu.trace import write_jsonl
+
+
+DEFAULT_OUTPUT = REPO_ROOT / "test" / "fixtures" / "traces" / "02b6c2c"
+RTL_COMMIT = "02b6c2c"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fixture_entry(
+    *,
+    source_log: Path,
+    output: Path,
+    description: str,
+    records,
+) -> dict[str, object]:
+    return {
+        "path": str(output.relative_to(DEFAULT_OUTPUT.parent.parent.parent.parent)),
+        "mode": "compatibility",
+        "description": description,
+        "cycles": max(record.cycle for record in records) + 1,
+        "records": len(records),
+        "lanes": sorted({record.lane for record in records}),
+        "sha256": _sha256(output),
+        "source_log": source_log.name,
+        "source_log_sha256": _sha256(source_log),
+    }
+
+
+def generate(
+    *,
+    matadd_log: Path,
+    matmul_log: Path,
+    output_dir: Path = DEFAULT_OUTPUT,
+) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "rtl_commit": RTL_COMMIT,
+        "generator": "test/generate_trace_fixtures.py",
+        "fixtures": {},
+    }
+
+    for kernel, source_log, description in (
+        (
+            "matadd",
+            matadd_log,
+            "Compatibility log: all enabled lanes, cycles 0-177",
+        ),
+        (
+            "matmul",
+            matmul_log,
+            "Compatibility log: testbench-filtered global thread 1, cycles 0-490",
+        ),
+    ):
+        records = records_from_log(source_log)
+        output = output_dir / kernel / "compatibility.jsonl"
+        write_jsonl(output, records)
+        manifest["fixtures"][kernel] = {
+            "compatibility": _fixture_entry(
+                source_log=source_log,
+                output=output,
+                description=description,
+                records=records,
+            )
+        }
+
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--matadd-log", type=Path, required=True)
+    parser.add_argument("--matmul-log", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    args = parser.parse_args()
+
+    manifest = generate(
+        matadd_log=args.matadd_log,
+        matmul_log=args.matmul_log,
+        output_dir=args.output_dir,
+    )
+    print(f"Wrote {args.output_dir / 'manifest.json'}")
+    for kernel, entry in manifest["fixtures"].items():
+        compatibility = entry["compatibility"]
+        print(
+            f"  {kernel}: {compatibility['cycles']} cycles, "
+            f"{compatibility['records']} records"
+        )
+
+
+if __name__ == "__main__":
+    main()
+

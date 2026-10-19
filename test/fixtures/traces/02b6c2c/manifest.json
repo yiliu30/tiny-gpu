@@ -1,0 +1,40 @@
+{
+  "fixtures": {
+    "matadd": {
+      "compatibility": {
+        "cycles": 178,
+        "description": "Compatibility log: all enabled lanes, cycles 0-177",
+        "lanes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mode": "compatibility",
+        "path": "test/fixtures/traces/02b6c2c/matadd/compatibility.jsonl",
+        "records": 1424,
+        "sha256": "35fb5735583229703b6bfd137eeb1032530e6e333023fcfa651bed67af655def",
+        "source_log": "log_20261019065213.txt",
+        "source_log_sha256": "e807d5aa9cecd7eb5c30fa9eae35622ef443169a10b3a00e65a31e5066dcff05"
+      }
+    },
+    "matmul": {
+      "compatibility": {
+        "cycles": 491,
+        "description": "Compatibility log: testbench-filtered global thread 1, cycles 0-490",
+        "lanes": [
+          1
+        ],
+        "mode": "compatibility",
+        "path": "test/fixtures/traces/02b6c2c/matmul/compatibility.jsonl",
+        "records": 491,
+        "sha256": "11d56df0780ac07daf31af389b4178b0a2dcfa775016b5aa4102a8f6f53514b9",
+        "source_log": "log_20261019065216.txt",
+        "source_log_sha256": "522777eb52143ebca8bb2eb60caec97f86a732bd752b7a80930dfdfbc71b0fff"
+      }
+    }
+  },
+  "generator": "test/generate_trace_fixtures.py",
+  "rtl_commit": "02b6c2c",
+  "schema_version": 1
+}

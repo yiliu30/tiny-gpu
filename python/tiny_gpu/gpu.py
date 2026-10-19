@@ -13,6 +13,8 @@ from .trace import TraceRecord
 
 
 class Gpu:
+    """Top-level graphics processor wiring for memory, control, cores, and dispatch."""
+
     def __init__(
         self,
         *,
@@ -25,6 +27,8 @@ class Gpu:
         num_cores: int = 2,
         threads_per_block: int = 4,
     ) -> None:
+        """Create the device control register, dispatcher, controllers, memories, and cores."""
+
         self.data_mem_addr_bits = data_mem_addr_bits
         self.data_mem_data_bits = data_mem_data_bits
         self.data_mem_num_channels = data_mem_num_channels
@@ -106,16 +110,22 @@ class Gpu:
 
     @property
     def done(self) -> int:
+        """Return whether the dispatcher has marked every block complete."""
+
         return self.dispatch.done
 
     def load_program(self, program: Sequence[int]) -> None:
+        """Load a machine-code instruction image into external program memory."""
+
         self.program_memory.load(program)
 
     def load_data(self, data: Sequence[int]) -> None:
+        """Load input values into external data memory."""
+
         self.data_memory.load(data)
 
     def boot(self, *, thread_count: int) -> None:
-        """Mirror setup.py: global reset edge, then DCR write edge, then start."""
+        """Reset the processor, write the device control register, then assert start."""
 
         self.reset = 1
         self.device_control_write_enable = 0
@@ -133,6 +143,8 @@ class Gpu:
         self.start = 1
 
     def service_external_memory(self) -> None:
+        """Return responses for program and data requests captured at the prior edge."""
+
         self._program_response = (
             _zero_response(self.program_mem_num_channels)
             if self._pending_program_request is None
@@ -145,9 +157,13 @@ class Gpu:
         )
 
     def settle(self) -> None:
+        """Provide the combinational settle point; current module outputs are already explicit."""
+
         return None
 
     def observe(self, cycle: int, *, compatibility: bool = True) -> list[TraceRecord]:
+        """Capture lane records for started cores before the next clock edge."""
+
         records = []
         for index, core in enumerate(self.cores):
             if self.dcr.value <= index * self.threads_per_block:
@@ -156,6 +172,8 @@ class Gpu:
         return records
 
     def evaluate_clocked(self) -> None:
+        """Evaluate every clocked module while all modules still see old state."""
+
         for core in self.cores:
             core.evaluate_clocked()
 
@@ -233,6 +251,8 @@ class Gpu:
             )
 
     def commit(self) -> None:
+        """Publish all staged processor updates together at the simulated clock edge."""
+
         for core in self.cores:
             core.commit()
         self.dcr.value = self._staged_dcr
@@ -257,6 +277,8 @@ class Gpu:
             core.data_mem_write_ready = list(self._staged_core_write_ready[index])
 
     def run_until_testbench_done(self, *, max_cycles: int = 100_000):
+        """Run with the testbench observation order and return records plus cycle count."""
+
         records: list[TraceRecord] = []
         cycle = 0
         done_visible = False
@@ -274,6 +296,8 @@ class Gpu:
         return records, cycle
 
     def _sync_dispatch_outputs(self) -> None:
+        """Copy dispatcher launch controls onto the compute cores."""
+
         for index, core in enumerate(self.cores):
             core.start = self.dispatch.core_start[index]
             core.reset = self.dispatch.core_reset[index]
@@ -282,5 +306,7 @@ class Gpu:
 
 
 def _zero_response(channels: int) -> MemoryResponse:
+    """Return an all-inactive response for every external-memory channel."""
+
     return MemoryResponse((0,) * channels, (0,) * channels, (0,) * channels)
 

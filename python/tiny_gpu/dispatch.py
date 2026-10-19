@@ -8,6 +8,8 @@ from typing import Sequence
 
 @dataclass
 class DispatchOutputs:
+    """Next block assignments, completion state, and per-core launch controls."""
+
     done: int
     core_start: list[int]
     core_reset: list[int]
@@ -19,7 +21,11 @@ class DispatchOutputs:
 
 
 class Dispatch:
+    """Divide a kernel's threads into blocks and assign blocks to available cores."""
+
     def __init__(self, *, num_cores: int = 2, threads_per_block: int = 4) -> None:
+        """Create dispatcher state for a fixed core count and block size."""
+
         self.num_cores = num_cores
         self.threads_per_block = threads_per_block
         self.done = 0
@@ -39,6 +45,8 @@ class Dispatch:
         thread_count: int,
         core_done: Sequence[int],
     ) -> DispatchOutputs:
+        """Return the next block assignment and completion state without committing it."""
+
         if reset:
             return DispatchOutputs(
                 done=0,
@@ -100,6 +108,8 @@ class Dispatch:
         )
 
     def commit(self, outputs: DispatchOutputs) -> None:
+        """Publish the evaluated dispatcher state at a simulated clock edge."""
+
         self.done = outputs.done
         self.blocks_dispatched = outputs.blocks_dispatched
         self.blocks_done = outputs.blocks_done
@@ -111,5 +121,7 @@ class Dispatch:
 
 
 def _at(values: Sequence[int], index: int) -> int:
+    """Return an optional per-core value, using zero when the index is absent."""
+
     return values[index] if index < len(values) else 0
 

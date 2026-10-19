@@ -24,7 +24,14 @@ class Alu:
         rs: int,
         rt: int,
     ) -> int:
-        """Return the output implied by the inputs without changing stored state."""
+        """Return the output implied by the inputs without changing stored state.
+
+        The comparison output reproduces the pinned RTL behavior: ``rs - rt`` is
+        wrapped to eight bits and compared as an unsigned value. A nonzero
+        wrapped difference sets the positive bit, including when the
+        mathematical difference is negative. The negative bit is therefore never
+        set by this implementation.
+        """
 
         if reset:
             return 0

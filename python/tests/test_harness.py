@@ -22,8 +22,9 @@ class DummyModel:
     def settle(self) -> None:
         assert self.memory_phase
 
-    def observe(self):
-        return {"cycle": self.cycle, "state": self.state, "ready": self.observed_ready}
+    def observe(self, cycle: int):
+        assert cycle == self.cycle
+        return {"cycle": cycle, "state": self.state, "ready": self.observed_ready}
 
     def evaluate_clocked(self) -> None:
         self.next_state = self.state
@@ -62,5 +63,22 @@ def test_run_until_done_includes_terminal_observed_cycle():
     model = DummyModel()
     harness = SimulationHarness(model)
     snapshots = harness.run_until_done(max_cycles=10)
-    assert [snapshot["cycle"] for snapshot in snapshots] == [0, 1, 2]
+    assert [snapshot["cycle"] for snapshot in snapshots] == [0, 1, 2, 3]
+    assert harness.cycle == 4
+    assert model.done is True
+
+
+def test_custom_observer_receives_harness_cycle():
+    observed_cycles = []
+
+    def observe(cycle: int):
+        observed_cycles.append(cycle)
+        return (cycle,)
+
+    harness = SimulationHarness(DummyModel(), observe=observe)
+    harness.step()
+    harness.step()
+
+    assert observed_cycles == [0, 1]
+    assert harness.snapshots == [(0,), (1,)]
 

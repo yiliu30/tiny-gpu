@@ -28,6 +28,20 @@ This stage does not yet model a complete graphics processing unit (GPU). Later
 stages add core control, memory arbitration, block dispatch, and the top-level
 GPU.
 
+## Pinned comparison semantics
+
+`compare_traces()` always requires every expected field to match. Its default
+partial mode ignores fields that appear only in the actual record, which permits
+comparison against older logs that captured fewer values. Use
+`strict_fields=True` for complete parity; it reports an unexpected actual field
+as a divergence.
+
+The arithmetic-logic unit reproduces the pinned RTL comparison behavior. It
+wraps `rs - rt` to eight bits and compares that unsigned result with zero. A
+nonzero wrapped result sets the positive bit, including for a mathematical
+negative difference, so the negative bit is never set. This deliberately
+preserves the behavior of the reference RTL instead of correcting it.
+
 Run the fast, simulator-independent tests with:
 
 ```bash

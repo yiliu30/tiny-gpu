@@ -74,3 +74,18 @@ def test_comparator_reports_first_field_with_expected_and_actual():
     assert divergence.field == "pc"
     assert (divergence.expected, divergence.actual) == (3, 4)
 
+
+def test_strict_comparison_rejects_unexpected_actual_field():
+    expected = [record()]
+    actual = [record()]
+    actual[0].extra["unexpected"] = 1
+
+    compare_traces(expected, actual)
+
+    with pytest.raises(TraceComparisonError) as error:
+        compare_traces(expected, actual, strict_fields=True)
+    divergence = error.value.divergence
+    assert divergence.kind == "field"
+    assert divergence.field == "unexpected"
+    assert (divergence.expected, divergence.actual) == ("<missing>", 1)
+

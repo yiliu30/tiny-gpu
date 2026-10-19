@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 
 class SimulationPhase(str, Enum):
@@ -27,8 +27,8 @@ class SimulationModel(Protocol):
     def settle(self) -> None:
         """Let combinational values settle before the pre-edge capture."""
 
-    def observe(self) -> Sequence[Any]:
-        """Capture the state visible before the next rising clock edge."""
+    def observe(self, cycle: int) -> Sequence[Any]:
+        """Capture the state visible in ``cycle`` before the next rising edge."""
 
     def evaluate_clocked(self) -> None:
         """Evaluate clocked modules while they still see the old state."""
@@ -45,11 +45,14 @@ class SimulationHarness:
         model: SimulationModel,
         *,
         phases: list[SimulationPhase] | None = None,
+        observe: Callable[[int], Sequence[Any]] | None = None,
     ) -> None:
-        """Store the model and an optional phase recorder for tests."""
+        """Store the model, observer, and optional phase recorder."""
 
         self.model = model
         self.phases = phases
+        self._observe = observe or model.observe
+        self.cycle = 0
         self.snapshots: list[Sequence[Any]] = []
 
     def _enter(self, phase: SimulationPhase) -> None:
@@ -64,20 +67,24 @@ class SimulationHarness:
         self._enter(SimulationPhase.SETTLE)
         self.model.settle()
         self._enter(SimulationPhase.CAPTURE)
-        snapshot = self.model.observe()
+        snapshot = self._observe(self.cycle)
         self.snapshots.append(snapshot)
         self._enter(SimulationPhase.EVALUATE_CLOCKED)
         self.model.evaluate_clocked()
         self._enter(SimulationPhase.COMMIT)
         self.model.commit()
+        self.cycle += 1
         return snapshot
 
     def run_until_done(self, *, max_cycles: int = 100_000) -> list[Sequence[Any]]:
-        """Step until the model reports completion, with a cycle limit."""
+        """Run until completion, preserving the testbench trailing-cycle observation."""
 
-        while not self.model.done:
-            self.step()
-            if len(self.snapshots) > max_cycles:
+        while True:
+            if self.cycle >= max_cycles:
                 raise RuntimeError(f"simulation exceeded {max_cycles} cycles")
+            done_before_edge = bool(self.model.done)
+            self.step()
+            if done_before_edge:
+                break
         return self.snapshots
 

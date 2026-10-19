@@ -213,7 +213,14 @@ def compare_traces(
     *,
     strict_fields: bool = False,
 ) -> None:
-    """Raise the first missing, unexpected, or field-level divergence."""
+    """Raise the first missing, unexpected, or field-level divergence.
+
+    Every field present in an expected record must match the corresponding
+    actual field. By default, ``strict_fields=False`` permits extra actual
+    fields for compatibility with partial reference logs. Set
+    ``strict_fields=True`` for complete parity so an unexpected actual field is
+    also reported as a divergence.
+    """
 
     expected_by_key = _index(expected, "expected")
     actual_by_key = _index(actual, "actual")

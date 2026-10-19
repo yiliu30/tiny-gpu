@@ -27,8 +27,22 @@ def test_arithmetic_and_wrap(mux, rs, rt, expected):
     assert actual == expected
 
 
-@pytest.mark.parametrize(("rs", "rt", "expected"), [(5, 3, 0b100), (5, 5, 0b010), (3, 5, 0b100)])
-def test_cmp_uses_wrapping_unsigned_difference(rs, rt, expected):
+@pytest.mark.parametrize(
+    ("rs", "rt", "expected"),
+    [
+        (5, 3, 0b100),
+        (5, 5, 0b010),
+        (3, 5, 0b100),
+        (0, 1, 0b100),
+        (1, 2, 0b100),
+        (0, 0, 0b010),
+        (127, 128, 0b100),
+        (128, 127, 0b100),
+        (0, 255, 0b100),
+        (255, 0, 0b100),
+    ],
+)
+def test_cmp_uses_pinned_wrapping_unsigned_difference(rs, rt, expected):
     alu = Alu()
     assert (
         alu.evaluate(
@@ -42,6 +56,22 @@ def test_cmp_uses_wrapping_unsigned_difference(rs, rt, expected):
         )
         == expected
     )
+
+
+def test_cmp_does_not_set_negative_for_wrapped_nonzero_difference():
+    alu = Alu()
+    result = alu.evaluate(
+        reset=False,
+        enable=True,
+        core_state=isa.CORE_EXECUTE,
+        arithmetic_mux=0,
+        output_mux=1,
+        rs=0,
+        rt=1,
+    )
+
+    assert result == 0b100
+    assert result & 0b001 == 0
 
 
 def test_output_only_changes_in_execute_and_enabled_lane():

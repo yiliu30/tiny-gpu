@@ -1,9 +1,9 @@
 # tiny-gpu Python model
 
-This package is the first stage of a Python model for tiny-gpu. It provides a
-readable bridge to the Verilog register-transfer-level (RTL) hardware model.
-Each Python module mirrors one hardware source file where that module exists, so
-the two implementations can be read side by side.
+This package contains the first two stages of a Python model for tiny-gpu. It
+provides a readable bridge to the Verilog register-transfer-level (RTL)
+hardware model. Each Python module mirrors one hardware source file where that
+module exists, so the two implementations can be read side by side.
 
 Stage A models the small building blocks and the shared simulation machinery:
 
@@ -24,9 +24,25 @@ Stage A models the small building blocks and the shared simulation machinery:
 - `memory.py`: external memory used by the testbench.
 - `isa.py`: instruction-set architecture constants and field extraction.
 
-This stage does not yet model a complete graphics processing unit (GPU). Later
-stages add core control, memory arbitration, block dispatch, and the top-level
-GPU.
+Stage B adds the shared control path for one compute core:
+
+- `fetcher.py`: requests the 16-bit instruction selected by the program counter
+  and holds it until decoding begins.
+- `scheduler.py`: advances the core through fetch, decode, memory request,
+  memory wait, execute, and update states.
+- `core.py`: joins the shared decoder, scheduler, and fetcher with one
+  arithmetic-logic unit, register file, program counter, and load-store stub per
+  lane. A lane is one parallel thread position within a block.
+- `stubs.py`: the temporary load-store placeholder used until the memory path
+  is added in Stage C. It raises `NotImplementedError` for `LDR` and `STR`
+  instead of silently returning zero load data.
+- `kernels.py`: binary instruction images for the bundled matrix-addition and
+  matrix-multiplication examples.
+
+The model now executes the shared instruction path for single instruction,
+multiple data (SIMD) lanes, but it does not yet service data-memory reads or
+writes. Later stages add memory arbitration, block dispatch, and the top-level
+graphics processing unit (GPU).
 
 ## Pinned comparison semantics
 
@@ -53,5 +69,7 @@ python -m pytest -q
 ```
 
 The trace fixture and normalization tools in `test/` let the Python model be
-checked against logs produced by the Verilog design. Open a module beside its
-same-named file in `src/` to follow the hardware-to-Python mapping.
+checked against logs produced by the Verilog design. Stage B compares the
+matrix-addition trace through the first `LDR` request, then verifies that the
+temporary load-store unit rejects that request explicitly. Open a module beside
+its same-named file in `src/` to follow the hardware-to-Python mapping.

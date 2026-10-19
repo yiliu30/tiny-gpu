@@ -1,4 +1,4 @@
-"""Normalize RTL text logs into the Python model's canonical trace schema."""
+"""Normalize Verilog register-transfer-level text logs into the canonical trace schema."""
 
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ def _record_for_thread(cycle: CycleSnapshot, core, thread) -> TraceRecord:
     """Convert one thread snapshot into the canonical Python trace schema."""
 
     if core.pc is None:
-        raise ValueError(f"cycle {cycle.index}, core {core.index}: missing PC")
+        raise ValueError(f"cycle {cycle.index}, core {core.index}: missing program counter")
     if core.instruction_bits is None:
         raise ValueError(
             f"cycle {cycle.index}, core {core.index}: missing raw Instruction Bits; "
-            "regenerate the RTL log with test/helpers/format.py"
+            "regenerate the Verilog register-transfer-level log with test/helpers/format.py"
         )
     if core.done is None:
         raise ValueError(f"cycle {cycle.index}, core {core.index}: missing Core Done")
@@ -85,7 +85,10 @@ def records_from_log(path: Path) -> list[TraceRecord]:
                 raise ValueError(f"{path}: cycle {cycle.index}: Trace State without lane records")
             missing_nzp = any(record.nzp is None for record in cycle_records)
             if missing_nzp:
-                raise ValueError(f"{path}: cycle {cycle.index}: full trace is missing NZP")
+                raise ValueError(
+                    f"{path}: cycle {cycle.index}: full trace is missing "
+                    "negative-zero-positive condition value"
+                )
             cycle_records[0].extra["arch_state"] = cycle.arch_state
         records.extend(cycle_records)
     if not records:

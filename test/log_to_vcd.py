@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a tiny-gpu textual cycle trace into a VCD waveform."""
+"""Convert a tiny-gpu textual cycle trace into a Value Change Dump waveform."""
 
 from __future__ import annotations
 
@@ -181,7 +181,10 @@ def parse_log(path: Path) -> list[CycleSnapshot]:
                 raise ValueError(f"{path}: cycle {snapshot.index} has unknown fetcher state {current_core.fetcher_state!r}")
             for current_thread in current_core.threads:
                 if current_thread.lsu_state not in LSU_STATES:
-                    raise ValueError(f"{path}: cycle {snapshot.index} has unknown LSU state {current_thread.lsu_state!r}")
+                    raise ValueError(
+                        f"{path}: cycle {snapshot.index} has unknown load-store-unit "
+                        f"state {current_thread.lsu_state!r}"
+                    )
 
     return cycles
 
@@ -326,7 +329,12 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log", type=Path, help="tiny-gpu cycle log to convert")
-    parser.add_argument("-o", "--output", type=Path, help="output VCD path (default: beside the log)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output Value Change Dump path (default: beside the log)",
+    )
     args = parser.parse_args()
 
     cycles = parse_log(args.log)

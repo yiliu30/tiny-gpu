@@ -52,7 +52,7 @@ class Alu:
             return (rs * rt) & 0xFF
         if arithmetic_mux == isa.ALU_DIV:
             if rt == 0:
-                raise ArithmeticError("division by zero is undefined in the RTL")
+                raise ArithmeticError("division by zero is undefined in the Verilog design")
             return (rs // rt) & 0xFF
         return self.alu_out
 

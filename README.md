@@ -337,21 +337,25 @@ For an interactive walkthrough of the architecture, open [docs/mental-model.html
 The textual cycle logs can also be converted into formats supported by waveform and timeline viewers:
 
 ```bash
-# Open the VCD in GTKWave, Surfer, or another waveform viewer.
+# Open the Value Change Dump (VCD) file in GTKWave, Surfer, or another waveform viewer.
 python3 test/log_to_vcd.py test/logs/log_<timestamp>.txt -o test/logs/matadd.vcd
 
 # Load the JSON at https://ui.perfetto.dev/ with "Open trace file".
 python3 test/log_to_perfetto.py test/logs/log_<timestamp>.txt -o test/logs/matadd.perfetto.json
 ```
 
-The converters expose core stages, instructions, LSU states, PC values, and thread registers. In the Perfetto trace, one simulated cycle is represented by one time unit.
+The converters expose core stages, instructions, load-store unit (LSU) states,
+program-counter (PC) values, and thread registers. In the Perfetto trace, one
+simulated cycle is represented by one time unit.
 
 ### Python cycle-accurate model
 
-The `python/` package provides a simulator-independent, module-aligned model of
-the RTL. It is a learning bridge: each hardware module has a same-named Python
-file, and every cycle can be inspected or compared against the pinned RTL
-traces.
+The `python/` package provides a simulator-independent Python model of the
+Verilog register-transfer-level (RTL) hardware. It is a learning bridge: each
+hardware module has a same-named Python file, and every simulated clock cycle
+can be inspected or compared against the pinned Verilog traces. A lane is one
+parallel thread position inside a compute core; this design has four lanes per
+core.
 
 ```bash
 cd python
@@ -362,10 +366,11 @@ tiny-gpu-trace matadd --format vcd -o matadd.vcd
 tiny-gpu-trace matmul --format perfetto -o matmul.perfetto.json
 ```
 
-The model reproduces matadd and matmul functional results and exact full-lane
-architectural traces: 178 cycles / 1424 records for matadd and 491 cycles /
-1964 records for matmul. The generated files come directly from canonical
-Python trace records rather than from text-log parsing. See
+The model reproduces the matrix-addition (`matadd`) and matrix-multiplication
+(`matmul`) results and exact traces for every enabled lane: 178 cycles and
+1,424 records for matrix addition, and 491 cycles and 1,964 records for matrix
+multiplication. The generated files come directly from canonical Python trace
+records rather than from text-log parsing. See
 [python/MODULE_GUIDE.md](python/MODULE_GUIDE.md) for the RTL-to-Python module
 map, observation phases, controller arbitration, memory relay timing, and
 preserved partial-block quirk.

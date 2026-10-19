@@ -1,4 +1,4 @@
-"""Write canonical trace records as VCD or Perfetto JSON."""
+"""Write canonical traces as Value Change Dump waveforms or Perfetto timeline JSON."""
 
 from __future__ import annotations
 
@@ -20,12 +20,16 @@ REGISTER_SIGNALS = tuple(name.lstrip("%") for name in isa.REGISTER_NAMES)
 
 @dataclass
 class _VcdSignal:
+    """One waveform signal and its encoded Value Change Dump value."""
+
     identifier: str
     width: int
     value: int | None = None
     encoded: str = ""
 
     def encode(self) -> str:
+        """Encode the current value using the waveform format's binary syntax."""
+
         if self.value is None:
             return "x" if self.width == 1 else "bx"
         value = int(self.value)
@@ -35,9 +39,13 @@ class _VcdSignal:
 
 
 class CanonicalVcdWriter:
+    """Convert canonical trace records into a deterministic Value Change Dump file."""
+
     def __init__(self, records: Sequence[TraceRecord]) -> None:
+        """Discover cores, lanes, registers, and architectural fields in the trace."""
+
         if not records:
-            raise ValueError("cannot write an empty VCD trace")
+            raise ValueError("cannot write an empty Value Change Dump trace")
         self.records = list(records)
         self.scopes: dict[tuple[str, ...], list[tuple[str, _VcdSignal]]] = {}
         self.signals: list[_VcdSignal] = []
@@ -93,7 +101,7 @@ class CanonicalVcdWriter:
         for signal_name, signal in self.scopes[scope]:
             if signal_name == name:
                 return signal
-        raise KeyError(f"unknown VCD signal {'.'.join(scope)}.{name}")
+        raise KeyError(f"unknown Value Change Dump signal {'.'.join(scope)}.{name}")
 
     def _apply_cycle(self, cycle: int) -> None:
         for signal in self.signals:
@@ -153,13 +161,15 @@ class CanonicalVcdWriter:
         output.append(f"{indent}$upscope $end")
 
     def write(self, path: Path, *, source: str = "canonical Python trace") -> None:
+        """Write signal definitions and value changes to the requested path."""
+
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
             "$date",
             "  generated deterministically by tiny-gpu-python-model",
             "$end",
             "$version",
-            "  canonical trace VCD",
+            "  canonical trace Value Change Dump",
             "$end",
             "$comment",
             f"  source: {source}",
@@ -193,10 +203,14 @@ def write_vcd(
     *,
     source: str = "canonical Python trace",
 ) -> None:
+    """Write canonical trace records as a Value Change Dump waveform file."""
+
     CanonicalVcdWriter(list(records)).write(path, source=source)
 
 
 def build_perfetto(records: Sequence[TraceRecord], *, source: str) -> dict[str, object]:
+    """Build a Perfetto timeline with one core-stage track and one track per lane."""
+
     if not records:
         raise ValueError("cannot write an empty Perfetto trace")
 
@@ -323,12 +337,16 @@ def write_perfetto(
     *,
     source: str = "canonical Python trace",
 ) -> None:
+    """Write canonical trace records as a Perfetto timeline JSON file."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     trace = build_perfetto(list(records), source=source)
     path.write_text(json.dumps(trace, separators=(",", ":")) + "\n")
 
 
 def _track_event(track_id: int, name: str, sort_index: int) -> dict[str, object]:
+    """Build the metadata event that names and orders one timeline track."""
+
     return {
         "ph": "M",
         "name": "thread_name",
@@ -345,6 +363,8 @@ def _set_one_hot(
     states: Sequence[str],
     active: str,
 ) -> None:
+    """Set one-hot waveform values for every state signal in a scope."""
+
     signals = dict(scopes[scope])
     for state in states:
         signals[f"{prefix}_{state}"].value = int(state == active)
@@ -353,6 +373,8 @@ def _set_one_hot(
 def _architecture_values(
     records: Sequence[TraceRecord],
 ) -> dict[str, dict[int, int | None]]:
+    """Flatten each cycle's architectural snapshot into per-signal value series."""
+
     flattened_by_cycle: dict[int, dict[str, int | None]] = {}
     for record in records:
         if "arch_state" not in record.extra:
@@ -375,6 +397,8 @@ def _architecture_values(
 
 
 def _flatten_state(value: Any, prefix: str, output: dict[str, int | None]) -> None:
+    """Flatten nested architecture dictionaries and lists into underscore-separated names."""
+
     if isinstance(value, Mapping):
         for key, item in value.items():
             child = f"{prefix}_{key}" if prefix else str(key)

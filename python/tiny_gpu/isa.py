@@ -1,4 +1,4 @@
-"""Shared tiny-gpu ISA constants and instruction-field helpers."""
+"""Shared tiny-gpu instruction-set architecture constants and field helpers."""
 
 from __future__ import annotations
 

@@ -25,6 +25,8 @@ FORMAT_SUFFIXES = {
 
 
 def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord], int]:
+    """Run one bundled kernel and return its processor, trace records, and cycle count."""
+
     full = mode == "full"
     compatibility = mode == "compatibility"
 
@@ -74,6 +76,8 @@ def simulate(kernel: str, *, mode: str = "full") -> tuple[Gpu, list[TraceRecord]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Parse command-line options, write the requested trace, and report results."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kernel", choices=("matadd", "matmul", "partial"))
     parser.add_argument(

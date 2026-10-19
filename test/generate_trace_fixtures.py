@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic canonical trace fixtures from RTL text logs."""
+"""Generate deterministic canonical trace fixtures from Verilog text logs."""
 
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ RTL_COMMIT = "02b6c2c"
 
 
 def _manifest_path(path: Path) -> str:
+    """Return a repository-relative path for deterministic fixture metadata."""
+
     try:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:

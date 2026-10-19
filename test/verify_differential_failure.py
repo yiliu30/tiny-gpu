@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that a one-field RTL mutation fails canonical trace comparison."""
+"""Prove that a one-field Verilog mutation fails canonical trace comparison."""
 
 from __future__ import annotations
 
@@ -17,6 +17,8 @@ from tiny_gpu.trace import TraceComparisonError, compare_traces, read_jsonl
 
 
 def main() -> int:
+    """Inject one field mismatch and confirm that comparison reports it."""
+
     fixture = REPO_ROOT / "test/fixtures/traces/02b6c2c/matadd/full.jsonl"
     expected = read_jsonl(fixture)
     expected[100].pc = (expected[100].pc + 1) & 0xFF

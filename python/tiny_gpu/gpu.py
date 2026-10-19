@@ -1,4 +1,4 @@
-"""Top-level GPU wiring; mirrors ``src/gpu.sv``."""
+"""Top-level graphics-processing-unit wiring; mirrors ``src/gpu.sv``."""
 
 from __future__ import annotations
 
@@ -168,7 +168,7 @@ class Gpu:
 
         self.device_control_write_enable = 0
         self.start = 1
-        # The RTL relay arrays are still X on the first captured cycle because
+        # The Verilog relay arrays are still X on the first captured cycle because
         # their first post-reset sample happens on the launch edge.
         self._relay_initialized = False
 
@@ -216,7 +216,7 @@ class Gpu:
         return records
 
     def full_trace_state(self) -> dict[str, object]:
-        """Return the full architectural state captured by the RTL log."""
+        """Return the full architectural state captured by the Verilog log."""
 
         relay_values = (
             [

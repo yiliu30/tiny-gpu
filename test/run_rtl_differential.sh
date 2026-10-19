@@ -39,7 +39,7 @@ python3 test/generate_trace_fixtures.py \
 FIXTURE_STATUS="$("${GIT[@]}" status --porcelain -- test/fixtures/traces/02b6c2c)"
 if [[ -n "$FIXTURE_STATUS" ]]; then
   "${GIT[@]}" diff -- test/fixtures/traces/02b6c2c
-  echo "ERROR: RTL-generated fixtures differ from committed fixtures" >&2
+  echo "ERROR: Verilog-generated fixtures differ from committed fixtures" >&2
   exit 1
 fi
 

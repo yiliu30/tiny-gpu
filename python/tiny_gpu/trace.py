@@ -1,4 +1,4 @@
-"""Canonical trace records, JSONL I/O, and first-divergence comparison."""
+"""Canonical trace records, JavaScript Object Notation Lines input/output, and comparison."""
 
 from __future__ import annotations
 

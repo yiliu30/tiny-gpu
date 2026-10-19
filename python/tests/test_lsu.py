@@ -137,4 +137,3 @@ def test_disabled_lane_holds_all_outputs():
     outputs = evaluate(lsu, enable=False, decoded_mem_read_enable=1)
     assert outputs.state == isa.LSU_WAITING
     assert outputs.mem_read_valid == 1
-

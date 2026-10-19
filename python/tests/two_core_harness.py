@@ -282,4 +282,3 @@ class TwoCoreHarness:
             core.reset = self.dispatcher.core_reset[index]
             core.block_id = self.dispatcher.core_block_id[index]
             core.thread_count = self.dispatcher.core_thread_count[index]
-

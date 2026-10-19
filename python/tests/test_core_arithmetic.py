@@ -116,4 +116,3 @@ def test_core_cmp_branch_updates_nzp_before_selecting_pc(
             pc_path.append(after[0])
     assert pc_path == expected_pc_path
     assert core.registers[3].values[3] == expected_r3
-

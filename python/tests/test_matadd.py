@@ -23,4 +23,3 @@ def test_matadd_runs_and_writes_expected_results():
     assert harness.data_memory.memory[16:24] == [0, 2, 4, 6, 8, 10, 12, 14]
     assert simulation.cycle == 178
     assert len(records) == len(expected)
-

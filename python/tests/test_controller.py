@@ -226,4 +226,3 @@ def test_reset_clears_channel_and_ownership_state():
     assert outputs.state == [isa.CONTROLLER_IDLE, isa.CONTROLLER_IDLE]
     assert outputs.serving == 0
     assert outputs.mem_read_valid == [0, 0]
-

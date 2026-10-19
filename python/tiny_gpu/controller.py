@@ -193,4 +193,3 @@ def _at(values: Sequence[int], index: int) -> int:
     """Return an optional channel value, using zero when the index is absent."""
 
     return values[index] if index < len(values) else 0
-

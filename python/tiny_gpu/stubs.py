@@ -2,22 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from . import isa
-
-
-@dataclass
-class LsuOutputs:
-    """State and memory-port values produced by a load-store unit."""
-
-    state: int
-    lsu_out: int
-    mem_read_valid: int
-    mem_read_address: int
-    mem_write_valid: int
-    mem_write_address: int
-    mem_write_data: int
+from .lsu import LsuOutputs
 
 
 class IdleLsu:

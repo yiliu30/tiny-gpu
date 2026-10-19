@@ -8,20 +8,27 @@ from . import isa
 from .alu import Alu
 from .decoder import Decoder, DecoderOutputs
 from .fetcher import Fetcher, FetcherOutputs
+from .lsu import Lsu, LsuOutputs
 from .pc import PcUnit
 from .registers import RegisterFile
 from .scheduler import Scheduler, SchedulerOutputs
-from .stubs import IdleLsu, LsuOutputs
 from .trace import TraceRecord
 
 
 class Core:
     """One compute core containing shared control and per-lane execution units."""
 
-    def __init__(self, *, threads_per_block: int = 4, lsu_factory=IdleLsu) -> None:
+    def __init__(
+        self,
+        *,
+        threads_per_block: int = 4,
+        lsu_factory=Lsu,
+        core_index: int = 0,
+    ) -> None:
         """Create shared control plus one arithmetic, register, and program-counter unit per lane."""
 
         self.threads_per_block = threads_per_block
+        self.core_index = core_index
 
         self.reset = 0
         self.start = 0
@@ -273,7 +280,7 @@ class Core:
             records.append(
                 TraceRecord(
                     cycle=cycle,
-                    core=0,
+                    core=self.core_index,
                     lane=lane,
                     thread_id=(self.block_id * self.threads_per_block + lane) & 0xFF,
                     core_state=isa.CORE_STATE_NAMES[self.core_state],

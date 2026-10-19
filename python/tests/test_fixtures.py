@@ -12,7 +12,7 @@ FIXTURE_ROOT = REPO_ROOT / "test" / "fixtures" / "traces" / "02b6c2c"
 def test_manifest_and_compatibility_fixtures_are_consistent():
     manifest = json.loads((FIXTURE_ROOT / "manifest.json").read_text())
     assert manifest["rtl_commit"] == "02b6c2c"
-    for kernel, expected_cycles in (("matadd", 178), ("matmul", 491)):
+    for kernel, expected_cycles in (("matadd", 178), ("matmul", 491), ("partial", 60)):
         entry = manifest["fixtures"][kernel]["compatibility"]
         path = FIXTURE_ROOT / kernel / "compatibility.jsonl"
         assert path.read_bytes() == (REPO_ROOT / entry["path"]).read_bytes()

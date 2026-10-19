@@ -62,6 +62,7 @@ def generate(
     *,
     matadd_log: Path,
     matmul_log: Path,
+    partial_log: Path | None = None,
     output_dir: Path = DEFAULT_OUTPUT,
 ) -> dict[str, object]:
     """Normalize Verilog logs into fixtures and return the generated manifest."""
@@ -98,6 +99,22 @@ def generate(
             )
         }
 
+    if partial_log is not None:
+        records = records_from_log(partial_log)
+        output = output_dir / "partial" / "compatibility.jsonl"
+        write_jsonl(output, records)
+        manifest["fixtures"]["partial"] = {
+            "compatibility": _fixture_entry(
+                source_log=partial_log,
+                output=output,
+                description=(
+                    "Compatibility log: bounded five-thread final block; "
+                    "one active lane in the second block"
+                ),
+                records=records,
+            )
+        }
+
     manifest_path = output_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
@@ -109,12 +126,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--matadd-log", type=Path, required=True)
     parser.add_argument("--matmul-log", type=Path, required=True)
+    parser.add_argument("--partial-log", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
 
     manifest = generate(
         matadd_log=args.matadd_log,
         matmul_log=args.matmul_log,
+        partial_log=args.partial_log,
         output_dir=args.output_dir,
     )
     print(f"Wrote {args.output_dir / 'manifest.json'}")
